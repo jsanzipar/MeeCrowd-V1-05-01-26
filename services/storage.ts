@@ -18,7 +18,7 @@ export const storageService = {
     if (Platform.OS !== 'web') {
       // Native (iOS/Android): read file as base64, decode to ArrayBuffer
       const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
       fileData = decode(base64);
 
