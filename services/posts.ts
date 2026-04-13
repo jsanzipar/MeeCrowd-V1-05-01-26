@@ -130,10 +130,23 @@ export const postsService = {
     const { data, error } = await supabase
       .from('posts')
       .select(POST_SELECT)
-      .ilike('title', `%${query}%`)
+      .or(`title.ilike.%${query}%,body.ilike.%${query}%`)
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(30);
     if (error) throw error;
     return data ?? [];
+  },
+
+  async getBookmarkedPosts(): Promise<Post[]> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase
+      .from('bookmarks')
+      .select(`post:posts!post_id (${POST_SELECT.trim()})`)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data?.map((b: any) => b.post).filter(Boolean) ?? []) as Post[];
   },
 };

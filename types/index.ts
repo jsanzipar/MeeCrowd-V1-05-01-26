@@ -4,6 +4,8 @@ export type FeedTab = 'for-you' | 'following' | 'featured';
 
 export type ContentType = 'post' | 'live' | 'scheduled' | 'clip';
 
+export type EventStatus = 'live' | 'upcoming' | 'past' | 'recurring';
+
 export type NotificationType = 'like' | 'comment' | 'follow' | 'mention' | 'featured' | 'platform_sync';
 
 // ── User / Profile ──────────────────────────────────────────────────────
@@ -95,7 +97,7 @@ export interface PlatformSummary {
   metrics: PlatformMetrics | null;
 }
 
-// ── Posts ────────────────────────────────────────────────────────────────
+// ── Posts (events) ──────────────────────────────────────────────────────
 
 export interface Post {
   id: string;
@@ -110,6 +112,10 @@ export interface Post {
   comment_count: number;
   view_count: number;
   is_featured: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
+  is_recurring: boolean;
+  recurrence_rule: string | null;
   created_at: string;
   updated_at: string;
   // Joined data
@@ -143,4 +149,46 @@ export interface Notification {
   read_at: string | null;
   created_at: string;
   actor?: User;
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+export function getEventStatus(post: Post): EventStatus {
+  if (post.is_recurring) return 'recurring';
+  if (!post.starts_at) return 'past';
+
+  const now = Date.now();
+  const start = new Date(post.starts_at).getTime();
+  const end = post.ends_at ? new Date(post.ends_at).getTime() : start + 3600000;
+
+  if (now >= start && now <= end) return 'live';
+  if (now < start) return 'upcoming';
+  return 'past';
+}
+
+export function formatEventTime(post: Post): string {
+  if (!post.starts_at) return '';
+  const d = new Date(post.starts_at);
+  const now = new Date();
+  const diff = d.getTime() - now.getTime();
+  const absDiff = Math.abs(diff);
+  const mins = Math.floor(absDiff / 60000);
+  const hrs = Math.floor(mins / 60);
+  const days = Math.floor(hrs / 24);
+
+  if (getEventStatus(post) === 'live') return 'LIVE NOW';
+
+  if (diff > 0) {
+    // Future
+    if (mins < 60) return `in ${mins}m`;
+    if (hrs < 24) return `in ${hrs}h`;
+    if (days < 7) return `in ${days}d`;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  // Past
+  if (mins < 60) return `${mins}m ago`;
+  if (hrs < 24) return `${hrs}h ago`;
+  if (days < 30) return `${days}d ago`;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }

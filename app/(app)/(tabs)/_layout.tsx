@@ -33,11 +33,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="discover"
+        name="schedule"
         options={{
-          title: 'Discover',
+          title: 'Schedule',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="search" size={size} color={color} />
+            <Ionicons name="calendar" size={size} color={color} />
           ),
         }}
       />
@@ -57,6 +57,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" size={size} color={color} />
           ),
+        }}
+      />
+      {/* Hide discover from tabs — search is now on the feed page */}
+      <Tabs.Screen
+        name="discover"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

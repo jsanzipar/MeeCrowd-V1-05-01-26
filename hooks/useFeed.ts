@@ -1,4 +1,4 @@
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { postsService } from '@/services/posts';
 import type { FeedTab } from '@/types';
 
@@ -20,5 +20,20 @@ export function useUserPosts(userId: string) {
       lastPage.length === 20 ? allPages.length : undefined,
     initialPageParam: 0,
     enabled: !!userId,
+  });
+}
+
+export function useSearchPosts(query: string) {
+  return useQuery({
+    queryKey: ['search-posts', query],
+    queryFn: () => postsService.searchPosts(query),
+    enabled: query.length >= 2,
+  });
+}
+
+export function useBookmarkedPosts() {
+  return useQuery({
+    queryKey: ['bookmarked-posts'],
+    queryFn: () => postsService.getBookmarkedPosts(),
   });
 }
