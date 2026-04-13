@@ -36,8 +36,8 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
 
   return (
     <TouchableOpacity
-      style={[styles.card, eventStatus === 'live' && styles.liveCard]}
-      activeOpacity={0.85}
+      style={styles.card}
+      activeOpacity={0.7}
       onPress={toggleExpand}
     >
       {/* Compact row — always visible */}
@@ -62,9 +62,11 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
           </View>
         </View>
 
-        <View style={styles.compactRight}>
-          <EventTag status={eventStatus} />
-        </View>
+        {post.thumbnail_url && (
+          <Image source={{ uri: post.thumbnail_url }} style={styles.compactThumb} />
+        )}
+
+        <EventTag status={eventStatus} />
       </View>
 
       {/* Expanded content */}
@@ -136,25 +138,17 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
           )}
         </View>
       )}
+
+      {/* Soft separator */}
+      <View style={styles.separator} />
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.card,
-    borderRadius: radius.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.xs,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  liveCard: {
-    borderColor: colors.error + '60',
-    borderLeftWidth: 3,
-    borderLeftColor: colors.error,
+    paddingTop: spacing.sm,
   },
   compactRow: {
     flexDirection: 'row',
@@ -190,8 +184,11 @@ const styles = StyleSheet.create({
     ...typography.small,
     color: colors.textSecondary,
   },
-  compactRight: {
-    alignItems: 'flex-end',
+  compactThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
   },
   compactStats: {
     flexDirection: 'row',
@@ -238,5 +235,11 @@ const styles = StyleSheet.create({
   },
   actionSpacer: {
     flex: 1,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginTop: spacing.sm,
+    opacity: 0.5,
   },
 });
