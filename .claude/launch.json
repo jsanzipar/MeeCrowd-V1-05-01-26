@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Expo Web",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\MeeCrowdApp && npx expo start --web --port 8081"],
+      "port": 8081
+    }
+  ]
+}
