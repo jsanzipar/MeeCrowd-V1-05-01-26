@@ -1,4 +1,4 @@
-export type Platform = 'youtube' | 'twitch' | 'kick' | 'instagram';
+export type Platform = 'youtube' | 'twitch' | 'kick' | 'instagram' | 'tiktok' | 'x' | 'facebook' | 'linkedin';
 
 export type FeedTab = 'for-you' | 'following' | 'featured';
 
@@ -84,6 +84,10 @@ export interface CrowdStats {
   twitch: number;
   kick: number;
   instagram: number;
+  tiktok: number;
+  x: number;
+  facebook: number;
+  linkedin: number;
   total: number;
 }
 

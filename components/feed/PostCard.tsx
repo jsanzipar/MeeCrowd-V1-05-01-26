@@ -57,7 +57,6 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
             <Text style={styles.username} numberOfLines={1}>
               {post.user?.display_name ?? 'Unknown'}
             </Text>
-            <PlatformBadge platform={post.platform} />
             <Text style={styles.timeText}>{timeLabel}</Text>
           </View>
         </View>
@@ -66,7 +65,10 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
           <Image source={{ uri: post.thumbnail_url }} style={styles.compactThumb} />
         )}
 
-        <EventTag status={eventStatus} />
+        <View style={styles.rightColumn}>
+          <EventTag status={eventStatus} />
+          <PlatformBadge platform={post.platform} size={14} />
+        </View>
       </View>
 
       {/* Expanded content */}
@@ -183,6 +185,10 @@ const styles = StyleSheet.create({
   timeText: {
     ...typography.small,
     color: colors.textSecondary,
+  },
+  rightColumn: {
+    alignItems: 'center',
+    gap: 4,
   },
   compactThumb: {
     width: 48,

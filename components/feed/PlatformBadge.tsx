@@ -1,23 +1,37 @@
 import React from 'react';
-import { Ionicons } from '@expo/vector-icons';
-import { colors } from '@/theme';
+import { Image, StyleSheet } from 'react-native';
 import type { Platform } from '@/types';
 
-const platformConfig: Record<Platform, { color: string; icon: keyof typeof Ionicons.glyphMap }> = {
-  youtube: { color: colors.youtube, icon: 'logo-youtube' },
-  twitch: { color: colors.twitch, icon: 'logo-twitch' },
-  kick: { color: colors.kick, icon: 'game-controller' },
-  instagram: { color: colors.instagram, icon: 'logo-instagram' },
+const STORAGE_BASE = 'https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos';
+
+const platformLogo: Record<Platform, string> = {
+  youtube: `${STORAGE_BASE}/YouTubeLogo.png`,
+  twitch: `${STORAGE_BASE}/TwitchLogo.png`,
+  kick: `${STORAGE_BASE}/KickLogo.png`,
+  instagram: `${STORAGE_BASE}/InstagramLogo.png`,
+  tiktok: `${STORAGE_BASE}/TikTokLogo.png`,
+  x: `${STORAGE_BASE}/XLogo.png`,
+  facebook: `${STORAGE_BASE}/FacebookLogo.png`,
+  linkedin: `${STORAGE_BASE}/LinkedInLogo.png`,
 };
 
 interface PlatformBadgeProps {
   platform: Platform;
-  size?: 'sm' | 'md';
+  size?: number;
 }
 
-export function PlatformBadge({ platform, size = 'sm' }: PlatformBadgeProps) {
-  const config = platformConfig[platform];
+export function PlatformBadge({ platform, size = 16 }: PlatformBadgeProps) {
   return (
-    <Ionicons name={config.icon} size={size === 'sm' ? 14 : 18} color={config.color} />
+    <Image
+      source={{ uri: platformLogo[platform] }}
+      style={[styles.logo, { width: size, height: size }]}
+      resizeMode="contain"
+    />
   );
 }
+
+const styles = StyleSheet.create({
+  logo: {
+    borderRadius: 3,
+  },
+});
