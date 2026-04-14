@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
@@ -14,6 +15,8 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/stores/authStore';
 import { colors, spacing, typography } from '@/theme';
+
+const LOGO_URL = 'https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/MeeCrowdLogoW.png';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -44,10 +47,7 @@ export default function LoginScreen() {
         >
           {/* Logo */}
           <View style={styles.logoArea}>
-            <View style={styles.logoCircle}>
-              <Text style={styles.logoM}>M</Text>
-            </View>
-            <Text style={styles.appName}>MeeCrowd</Text>
+            <Image source={{ uri: LOGO_URL }} style={styles.logo} resizeMode="contain" />
             <Text style={styles.tagline}>Your crowd, one place</Text>
           </View>
 
@@ -107,23 +107,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing['4xl'],
   },
-  logoCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.lg,
-  },
-  logoM: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: colors.white,
-  },
-  appName: {
-    ...typography.h1,
-    color: colors.text,
+  logo: {
+    width: 260,
+    height: 90,
+    marginBottom: spacing.md,
   },
   tagline: {
     ...typography.body,
