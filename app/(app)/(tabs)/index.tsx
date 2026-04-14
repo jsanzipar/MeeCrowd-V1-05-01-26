@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import {
   View,
   FlatList,
@@ -7,11 +7,15 @@ import {
   ActivityIndicator,
   TextInput,
   Image,
+  TouchableOpacity,
+  Pressable,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { FeedTabs } from '@/components/feed/FeedTabs';
 import { PostCard } from '@/components/feed/PostCard';
+import { SortFilters, ActiveFilterChips, CountryPicker } from '@/components/feed/SortFilters';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useFeed, useSearchPosts } from '@/hooks/useFeed';
 import { useFeedStore } from '@/stores/feedStore';
@@ -23,10 +27,18 @@ import type { Post } from '@/types';
 const LOGO_URL = 'https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/MeeCrowdLogoW.png';
 
 export default function FeedScreen() {
-  const { activeTab, setActiveTab, searchQuery, setSearchQuery } = useFeedStore();
+  const {
+    activeTab, setActiveTab,
+    searchQuery, setSearchQuery,
+    activeFilters, toggleFilter, clearFilters,
+    selectedCountry, setSelectedCountry,
+    showSortPanel, toggleSortPanel, setShowSortPanel,
+    showCountryPicker, setShowCountryPicker,
+  } = useFeedStore();
   const [isSearching, setIsSearching] = useState(false);
+  const searchRef = useRef<TextInput>(null);
 
-  const feed = useFeed(activeTab);
+  const feed = useFeed(activeTab, activeFilters);
   const search = useSearchPosts(searchQuery);
 
   const posts = isSearching && searchQuery.length >= 2
@@ -68,44 +80,101 @@ export default function FeedScreen() {
     />
   ), [handleLike, handleBookmark]);
 
+  const closePanels = () => {
+    setShowSortPanel(false);
+    Keyboard.dismiss();
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header with logo + search */}
+      {/* Header with logo + split search/sort bar */}
       <View style={styles.headerBar}>
         <Image source={{ uri: LOGO_URL }} style={styles.logo} resizeMode="contain" />
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={16} color={colors.textMuted} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search events..."
-            placeholderTextColor={colors.textMuted}
-            value={searchQuery}
-            onChangeText={(text) => {
-              setSearchQuery(text);
-              setIsSearching(text.length > 0);
-            }}
-            onFocus={() => setIsSearching(true)}
-            onBlur={() => {
-              if (!searchQuery) setIsSearching(false);
-            }}
-            returnKeyType="search"
-          />
-          {searchQuery.length > 0 && (
-            <Ionicons
-              name="close-circle"
-              size={16}
-              color={colors.textMuted}
-              onPress={() => {
+        <View style={styles.barContainer}>
+          {/* Search half (left) */}
+          <View style={styles.searchHalf}>
+            <Ionicons name="search" size={15} color={colors.textMuted} />
+            <TextInput
+              ref={searchRef}
+              style={styles.searchInput}
+              placeholder="Search..."
+              placeholderTextColor={colors.textMuted}
+              value={searchQuery}
+              onChangeText={(text) => {
+                setSearchQuery(text);
+                setIsSearching(text.length > 0);
+                if (text.length > 0) setShowSortPanel(false);
+              }}
+              onFocus={() => {
+                setIsSearching(true);
+                setShowSortPanel(false);
+              }}
+              onBlur={() => {
+                if (!searchQuery) setIsSearching(false);
+              }}
+              returnKeyType="search"
+            />
+            {searchQuery.length > 0 && (
+              <Ionicons
+                name="close-circle"
+                size={14}
+                color={colors.textMuted}
+                onPress={() => {
+                  setSearchQuery('');
+                  setIsSearching(false);
+                  searchRef.current?.blur();
+                }}
+              />
+            )}
+          </View>
+
+          {/* Divider */}
+          <View style={styles.barDivider} />
+
+          {/* Sort half (right) */}
+          <TouchableOpacity
+            style={styles.sortHalf}
+            onPress={() => {
+              if (isSearching) {
                 setSearchQuery('');
                 setIsSearching(false);
-              }}
-            />
-          )}
+                searchRef.current?.blur();
+              }
+              toggleSortPanel();
+            }}
+            activeOpacity={0.7}
+          >
+            {activeFilters.length > 0 ? (
+              <ActiveFilterChips
+                filters={activeFilters}
+                selectedCountry={selectedCountry}
+                onToggle={toggleFilter}
+                onClear={clearFilters}
+              />
+            ) : (
+              <Ionicons
+                name="options"
+                size={16}
+                color={showSortPanel ? colors.primary : colors.textMuted}
+              />
+            )}
+          </TouchableOpacity>
         </View>
       </View>
 
+      {/* Sort panel dropdown */}
+      {showSortPanel && (
+        <SortFilters
+          activeFilters={activeFilters}
+          selectedCountry={selectedCountry}
+          onToggle={toggleFilter}
+          onClear={() => { clearFilters(); setShowSortPanel(false); }}
+          onChooseLocation={() => setShowCountryPicker(true)}
+        />
+      )}
+
       {/* Feed tabs — hidden during search */}
-      {!isSearching && (
+      {!isSearching && !showSortPanel && (
         <FeedTabs activeTab={activeTab} onTabChange={setActiveTab} />
       )}
 
@@ -115,6 +184,8 @@ export default function FeedScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        onScrollBeginDrag={closePanels}
+        onTouchStart={showSortPanel ? closePanels : undefined}
         refreshControl={
           !isSearching ? (
             <RefreshControl
@@ -154,11 +225,21 @@ export default function FeedScreen() {
             <EmptyState
               icon="newspaper-outline"
               title="No events yet"
-              message="Follow creators or check out Featured"
+              message="Follow creators or switch to Trending"
             />
           )
         }
       />
+
+      {/* Country picker modal */}
+      {showCountryPicker && (
+        <CountryPicker
+          visible={showCountryPicker}
+          selected={selectedCountry}
+          onSelect={setSelectedCountry}
+          onClose={() => setShowCountryPicker(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -179,24 +260,44 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
   },
-  searchContainer: {
+  barContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
     height: 36,
-    gap: spacing.xs,
     borderWidth: 1,
     borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  searchHalf: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    gap: 4,
   },
   searchInput: {
     flex: 1,
     ...typography.body,
     color: colors.text,
-    fontSize: 14,
+    fontSize: 13,
     paddingVertical: 0,
+  },
+  barDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: colors.border,
+  },
+  sortHalf: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    gap: 6,
+    height: '100%',
+    minWidth: 36,
+    justifyContent: 'center',
   },
   list: {
     paddingTop: spacing.sm,

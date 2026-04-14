@@ -1,11 +1,11 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { postsService } from '@/services/posts';
-import type { FeedTab } from '@/types';
+import type { FeedTab, SortFilter } from '@/types';
 
-export function useFeed(tab: FeedTab) {
+export function useFeed(tab: FeedTab, filters: SortFilter[] = []) {
   return useInfiniteQuery({
-    queryKey: ['feed', tab],
-    queryFn: ({ pageParam = 0 }) => postsService.getFeed(tab, pageParam),
+    queryKey: ['feed', tab, ...filters],
+    queryFn: ({ pageParam = 0 }) => postsService.getFeed(tab, pageParam, 20, filters),
     getNextPageParam: (lastPage, allPages) =>
       lastPage.length === 20 ? allPages.length : undefined,
     initialPageParam: 0,

@@ -1,23 +1,57 @@
 import { supabase } from '@/lib/supabase';
-import type { Post, Comment, FeedTab } from '@/types';
+import type { Post, Comment, FeedTab, SortFilter } from '@/types';
 
 const POST_SELECT = `
   *,
   user:profiles!user_id (*)
 `;
 
+const PLATFORM_FILTERS = ['youtube', 'twitch', 'kick', 'instagram', 'tiktok', 'x', 'facebook', 'linkedin'];
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  gaming: ['game', 'gaming', 'fortnite', 'valorant', 'elden', 'nerf', 'pc build'],
+  music: ['music', 'song', 'concert', 'album', 'playlist', 'dj'],
+  sports: ['sport', 'football', 'basketball', 'soccer', 'nba', 'nfl'],
+  education: ['tutorial', 'learn', 'course', 'education', 'science', 'how to', 'setup guide'],
+  entertainment: ['vlog', 'challenge', 'react', 'day in my life', 'unboxing', 'review'],
+};
+
 export const postsService = {
-  async getFeed(tab: FeedTab, page = 0, limit = 20): Promise<Post[]> {
+  async getFeed(tab: FeedTab, page = 0, limit = 20, filters: SortFilter[] = []): Promise<Post[]> {
     let query = supabase
       .from('posts')
       .select(POST_SELECT)
-      .order('created_at', { ascending: false })
       .range(page * limit, (page + 1) * limit - 1);
 
-    if (tab === 'featured') {
-      query = query.eq('is_featured', true);
-    } else if (tab === 'following') {
-      // Server-side RPC or filter by followed users
+    // ── Tab logic ──
+    if (tab === 'upcoming') {
+      query = query.or(
+        'content_type.eq.live,is_recurring.eq.true,starts_at.gte.' + new Date().toISOString()
+      );
+      query = query.order('starts_at', { ascending: true, nullsFirst: false });
+    } else {
+      query = query.order('created_at', { ascending: false });
+    }
+
+    // ── Multi-filter logic ──
+    // Collect platform filters
+    const platformFilters = filters.filter(f => PLATFORM_FILTERS.includes(f));
+    if (platformFilters.length > 0) {
+      query = query.in('platform', platformFilters);
+    }
+
+    // Content type filters
+    if (filters.includes('streamers')) {
+      query = query.in('content_type', ['live', 'clip']);
+    }
+    if (filters.includes('broadcasters')) {
+      query = query.in('content_type', ['post', 'scheduled']);
+    }
+    if (filters.includes('near-me')) {
+      query = query.eq('content_type', 'live');
+    }
+
+    // Following filter
+    if (filters.includes('following')) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const { data: follows } = await supabase
@@ -33,9 +67,26 @@ export const postsService = {
       }
     }
 
+    // Category filters — keyword match on title
+    const categoryFilters = filters.filter(f => f in CATEGORY_KEYWORDS);
+    if (categoryFilters.length > 0) {
+      const allKeywords = categoryFilters.flatMap(f => CATEGORY_KEYWORDS[f]);
+      const orClauses = allKeywords.map(k => `title.ilike.%${k}%`).join(',');
+      query = query.or(orClauses);
+    }
+
     const { data, error } = await query;
     if (error) throw error;
-    return data ?? [];
+
+    let results = data ?? [];
+
+    // Client-side trending score sort
+    if (tab === 'trending') {
+      const now = Date.now();
+      results = results.sort((a, b) => trendingScore(b, now) - trendingScore(a, now));
+    }
+
+    return results;
   },
 
   async getPost(postId: string): Promise<Post> {
@@ -150,3 +201,16 @@ export const postsService = {
     return (data?.map((b: any) => b.post).filter(Boolean) ?? []) as Post[];
   },
 };
+
+/** Compute a trending score — recency-weighted engagement */
+function trendingScore(post: Post, now: number): number {
+  const age = (now - new Date(post.created_at).getTime()) / 3600000; // hours
+  const decay = Math.max(1, age); // min 1 hour
+  const engagement =
+    (post.view_count ?? 0) * 1 +
+    (post.like_count ?? 0) * 2 +
+    (post.comment_count ?? 0) * 3;
+  // Live events get a 5x boost
+  const liveBoost = post.content_type === 'live' ? 5 : 1;
+  return (engagement * liveBoost) / Math.sqrt(decay);
+}

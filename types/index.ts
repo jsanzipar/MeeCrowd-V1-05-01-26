@@ -1,6 +1,19 @@
 export type Platform = 'youtube' | 'twitch' | 'kick' | 'instagram' | 'tiktok' | 'x' | 'facebook' | 'linkedin';
 
-export type FeedTab = 'for-you' | 'following' | 'featured';
+export type FeedTab = 'upcoming' | 'trending';
+
+export type SortFilter =
+  | 'following'
+  | 'streamers'
+  | 'youtube' | 'twitch' | 'kick' | 'instagram' | 'tiktok' | 'x' | 'facebook' | 'linkedin'
+  | 'near-me'
+  | 'location'
+  | 'broadcasters'
+  | 'gaming'
+  | 'music'
+  | 'sports'
+  | 'education'
+  | 'entertainment';
 
 export type ContentType = 'post' | 'live' | 'scheduled' | 'clip';
 

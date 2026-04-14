@@ -4,9 +4,8 @@ import { colors, spacing, radius, typography } from '@/theme';
 import type { FeedTab } from '@/types';
 
 const tabs: { key: FeedTab; label: string }[] = [
-  { key: 'for-you', label: 'For You' },
-  { key: 'following', label: 'Following' },
-  { key: 'featured', label: 'Featured' },
+  { key: 'upcoming', label: 'Upcoming' },
+  { key: 'trending', label: 'Trending' },
 ];
 
 interface FeedTabsProps {

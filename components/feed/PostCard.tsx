@@ -51,7 +51,7 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
 
         <View style={styles.compactCenter}>
           <View style={styles.titleRow}>
-            <Text style={styles.title} numberOfLines={1}>{post.title}</Text>
+            <Text style={styles.title} numberOfLines={expanded ? undefined : 1}>{post.title}</Text>
           </View>
           <View style={styles.metaRow}>
             <Text style={styles.username} numberOfLines={1}>
@@ -61,7 +61,7 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
           </View>
         </View>
 
-        {post.thumbnail_url && (
+        {!expanded && post.thumbnail_url && (
           <Image source={{ uri: post.thumbnail_url }} style={styles.compactThumb} />
         )}
 
