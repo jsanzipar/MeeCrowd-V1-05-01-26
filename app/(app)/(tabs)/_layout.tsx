@@ -1,34 +1,39 @@
 import { Tabs } from 'expo-router';
+import { Image, View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/theme';
+
+const LOGO_ICON_URL =
+  'https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/MeeCrowdLogoW.png';
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
+        tabBarShowLabel: false,
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 85,
-          paddingBottom: 28,
+          height: 60,
+          paddingBottom: 8,
           paddingTop: 8,
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-        },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Feed',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <Image
+              source={{ uri: LOGO_ICON_URL }}
+              style={[iconStyles.logo, { tintColor: color }]}
+              resizeMode="contain"
+            />
           ),
         }}
       />
@@ -37,16 +42,7 @@ export default function TabLayout() {
         options={{
           title: 'Schedule',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="notifications"
-        options={{
-          title: 'Alerts',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="notifications" size={size} color={color} />
+            <Ionicons name="bookmark" size={size} color={color} />
           ),
         }}
       />
@@ -59,13 +55,22 @@ export default function TabLayout() {
           ),
         }}
       />
-      {/* Hide discover from tabs — search is now on the feed page */}
+      {/* Hidden tabs — accessible via router.push but not in tab bar */}
+      <Tabs.Screen
+        name="notifications"
+        options={{ href: null }}
+      />
       <Tabs.Screen
         name="discover"
-        options={{
-          href: null,
-        }}
+        options={{ href: null }}
       />
     </Tabs>
   );
 }
+
+const iconStyles = StyleSheet.create({
+  logo: {
+    width: 26,
+    height: 26,
+  },
+});

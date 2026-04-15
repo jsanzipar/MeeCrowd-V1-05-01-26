@@ -15,6 +15,42 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
   entertainment: ['vlog', 'challenge', 'react', 'day in my life', 'unboxing', 'review'],
 };
 
+/**
+ * Enrich an array of posts with the current user's is_liked / is_bookmarked flags.
+ * Runs two lightweight queries against post_likes and bookmarks.
+ */
+async function enrichPosts(posts: Post[]): Promise<Post[]> {
+  if (posts.length === 0) return posts;
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return posts;
+
+  const postIds = posts.map((p) => p.id);
+
+  // Fetch likes and bookmarks for these posts in parallel
+  const [likesRes, bookmarksRes] = await Promise.all([
+    supabase
+      .from('post_likes')
+      .select('post_id')
+      .eq('user_id', user.id)
+      .in('post_id', postIds),
+    supabase
+      .from('bookmarks')
+      .select('post_id')
+      .eq('user_id', user.id)
+      .in('post_id', postIds),
+  ]);
+
+  const likedIds = new Set(likesRes.data?.map((l) => l.post_id) ?? []);
+  const bookmarkedIds = new Set(bookmarksRes.data?.map((b) => b.post_id) ?? []);
+
+  return posts.map((post) => ({
+    ...post,
+    is_liked: likedIds.has(post.id),
+    is_bookmarked: bookmarkedIds.has(post.id),
+  }));
+}
+
 export const postsService = {
   async getFeed(tab: FeedTab, page = 0, limit = 20, filters: SortFilter[] = []): Promise<Post[]> {
     let query = supabase
@@ -86,7 +122,7 @@ export const postsService = {
       results = results.sort((a, b) => trendingScore(b, now) - trendingScore(a, now));
     }
 
-    return results;
+    return enrichPosts(results);
   },
 
   async getPost(postId: string): Promise<Post> {
@@ -96,7 +132,9 @@ export const postsService = {
       .eq('id', postId)
       .single();
     if (error) throw error;
-    return data;
+
+    const enriched = await enrichPosts([data]);
+    return enriched[0];
   },
 
   async getUserPosts(userId: string, page = 0, limit = 20): Promise<Post[]> {
@@ -107,7 +145,7 @@ export const postsService = {
       .order('created_at', { ascending: false })
       .range(page * limit, (page + 1) * limit - 1);
     if (error) throw error;
-    return data ?? [];
+    return enrichPosts(data ?? []);
   },
 
   async likePost(postId: string) {
@@ -185,7 +223,7 @@ export const postsService = {
       .order('created_at', { ascending: false })
       .limit(30);
     if (error) throw error;
-    return data ?? [];
+    return enrichPosts(data ?? []);
   },
 
   async getBookmarkedPosts(): Promise<Post[]> {
@@ -198,7 +236,9 @@ export const postsService = {
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data?.map((b: any) => b.post).filter(Boolean) ?? []) as Post[];
+    const posts = (data?.map((b: any) => b.post).filter(Boolean) ?? []) as Post[];
+    // All bookmarked posts are by definition bookmarked; still enrich for is_liked
+    return enrichPosts(posts);
   },
 };
 

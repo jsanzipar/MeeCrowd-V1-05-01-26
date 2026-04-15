@@ -41,14 +41,18 @@ export default function ScheduleScreen() {
   }, []);
 
   const handleBookmark = useCallback(async (post: Post) => {
+    // Every post on this page is bookmarked — tapping always unbookmarks
     try {
-      if (post.is_bookmarked) {
-        await postsService.unbookmarkPost(post.id);
-      } else {
-        await postsService.bookmarkPost(post.id);
-      }
+      // Optimistically remove from schedule list immediately
+      queryClient.setQueryData<Post[]>(['bookmarked-posts'], (old) =>
+        old ? old.filter((p) => p.id !== post.id) : []
+      );
+      await postsService.unbookmarkPost(post.id);
+      queryClient.invalidateQueries({ queryKey: ['feed'] });
+    } catch {
+      // Revert on failure
       queryClient.invalidateQueries({ queryKey: ['bookmarked-posts'] });
-    } catch {}
+    }
   }, []);
 
   // Group posts by event status

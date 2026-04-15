@@ -1,14 +1,19 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, Image, StyleSheet } from 'react-native';
 import { colors, spacing, typography } from '@/theme';
 import type { CrowdStats, Platform } from '@/types';
 
-const platforms: { key: Platform; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
-  { key: 'youtube', icon: 'logo-youtube', color: colors.youtube },
-  { key: 'twitch', icon: 'logo-twitch', color: colors.twitch },
-  { key: 'kick', icon: 'game-controller', color: colors.kick },
-  { key: 'instagram', icon: 'logo-instagram', color: colors.instagram },
+const STORAGE_BASE = 'https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos';
+
+const ALL_PLATFORMS: { key: Platform; logo: string }[] = [
+  { key: 'youtube', logo: `${STORAGE_BASE}/YouTubeLogo.png` },
+  { key: 'twitch', logo: `${STORAGE_BASE}/TwitchLogo.png` },
+  { key: 'kick', logo: `${STORAGE_BASE}/KickLogo.png` },
+  { key: 'instagram', logo: `${STORAGE_BASE}/InstagramLogo.png` },
+  { key: 'tiktok', logo: `${STORAGE_BASE}/TikTokLogo.png` },
+  { key: 'x', logo: `${STORAGE_BASE}/XLogo.png` },
+  { key: 'facebook', logo: `${STORAGE_BASE}/FacebookLogo.png` },
+  { key: 'linkedin', logo: `${STORAGE_BASE}/LinkedInLogo.png` },
 ];
 
 function formatStat(n: number): string {
@@ -22,17 +27,31 @@ interface CrowdStatsBarProps {
 }
 
 export function CrowdStatsBar({ stats }: CrowdStatsBarProps) {
+  // Only show platforms that have a nonzero count
+  const activePlatforms = ALL_PLATFORMS.filter(({ key }) => (stats[key] ?? 0) > 0);
+
   return (
     <View style={styles.container}>
-      {platforms.map(({ key, icon, color }) => (
-        <View key={key} style={styles.stat}>
-          <Ionicons name={icon} size={20} color={color} />
-          <Text style={[styles.count, { color }]}>{formatStat(stats[key])}</Text>
-        </View>
-      ))}
-      <View style={styles.divider} />
-      <View style={styles.stat}>
-        <Text style={styles.totalLabel}>CROWD</Text>
+      {/* Platform stats */}
+      <View style={styles.platformsRow}>
+        {activePlatforms.length > 0 ? (
+          activePlatforms.map(({ key, logo }) => (
+            <View key={key} style={styles.stat}>
+              <Image source={{ uri: logo }} style={styles.logo} resizeMode="contain" />
+              <Text style={styles.count}>{formatStat(stats[key] ?? 0)}</Text>
+            </View>
+          ))
+        ) : (
+          <Text style={styles.noPlatforms}>No platforms connected</Text>
+        )}
+      </View>
+
+      {/* Separator */}
+      <View style={styles.separator} />
+
+      {/* Total crowd */}
+      <View style={styles.totalRow}>
+        <Text style={styles.totalLabel}>TOTAL CROWD</Text>
         <Text style={styles.totalCount}>{formatStat(stats.total)}</Text>
       </View>
     </View>
@@ -41,27 +60,44 @@ export function CrowdStatsBar({ stats }: CrowdStatsBarProps) {
 
 const styles = StyleSheet.create({
   container: {
+    paddingVertical: spacing.sm,
+  },
+  platformsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.lg,
-    backgroundColor: colors.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: spacing.lg,
+    paddingVertical: spacing.sm,
   },
   stat: {
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: 4,
+  },
+  logo: {
+    width: 20,
+    height: 20,
   },
   count: {
     ...typography.bodyBold,
+    color: colors.textSecondary,
+    fontSize: 13,
   },
-  divider: {
-    width: 1,
-    height: 32,
+  noPlatforms: {
+    ...typography.body,
+    color: colors.textMuted,
+    fontSize: 13,
+  },
+  separator: {
+    height: 1,
     backgroundColor: colors.border,
+    marginVertical: spacing.sm,
+    opacity: 0.5,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   totalLabel: {
     ...typography.small,

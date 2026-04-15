@@ -60,6 +60,16 @@ export default function AppLayout() {
           animation: 'slide_from_right',
         }}
       />
+      <Stack.Screen
+        name="settings/notifications"
+        options={{
+          headerShown: true,
+          headerTitle: 'Alerts',
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.text,
+          animation: 'slide_from_right',
+        }}
+      />
     </Stack>
   );
 }
