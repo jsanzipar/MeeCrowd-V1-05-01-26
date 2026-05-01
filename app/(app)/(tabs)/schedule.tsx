@@ -1,22 +1,21 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import {
   View,
   Text,
-  FlatList,
   StyleSheet,
   RefreshControl,
-  ActivityIndicator,
   SectionList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PostCard } from '@/components/feed/PostCard';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { PostListSkeleton } from '@/components/ui/Skeleton';
 import { useBookmarkedPosts } from '@/hooks/useFeed';
-import { postsService } from '@/services/posts';
-import { queryClient } from '@/lib/queryClient';
-import { getEventStatus, formatEventTime } from '@/types';
+import { usePostActions } from '@/hooks/usePostActions';
+import { getEventStatus } from '@/types';
 import { colors, spacing, typography } from '@/theme';
-import type { Post, EventStatus } from '@/types';
+import type { EventStatus } from '@/types';
 
 const STATUS_ORDER: EventStatus[] = ['live', 'upcoming', 'recurring', 'past'];
 const STATUS_LABELS: Record<EventStatus, string> = {
@@ -27,33 +26,8 @@ const STATUS_LABELS: Record<EventStatus, string> = {
 };
 
 export default function ScheduleScreen() {
-  const { data: posts, isLoading, refetch, isRefetching } = useBookmarkedPosts();
-
-  const handleLike = useCallback(async (post: Post) => {
-    try {
-      if (post.is_liked) {
-        await postsService.unlikePost(post.id);
-      } else {
-        await postsService.likePost(post.id);
-      }
-      queryClient.invalidateQueries({ queryKey: ['bookmarked-posts'] });
-    } catch {}
-  }, []);
-
-  const handleBookmark = useCallback(async (post: Post) => {
-    // Every post on this page is bookmarked — tapping always unbookmarks
-    try {
-      // Optimistically remove from schedule list immediately
-      queryClient.setQueryData<Post[]>(['bookmarked-posts'], (old) =>
-        old ? old.filter((p) => p.id !== post.id) : []
-      );
-      await postsService.unbookmarkPost(post.id);
-      queryClient.invalidateQueries({ queryKey: ['feed'] });
-    } catch {
-      // Revert on failure
-      queryClient.invalidateQueries({ queryKey: ['bookmarked-posts'] });
-    }
-  }, []);
+  const { data: posts, isLoading, isError, refetch, isRefetching } = useBookmarkedPosts();
+  const { toggleLike, toggleBookmark } = usePostActions();
 
   // Group posts by event status
   const sections = STATUS_ORDER
@@ -67,9 +41,9 @@ export default function ScheduleScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>My Schedule</Text>
+        <Text style={styles.headerTitle}>Saved</Text>
         <Text style={styles.headerSub}>
-          {posts?.length ?? 0} event{(posts?.length ?? 0) !== 1 ? 's' : ''}
+          {posts?.length ?? 0} event{(posts?.length ?? 0) !== 1 ? 's' : ''} in your lineup
         </Text>
       </View>
 
@@ -79,8 +53,8 @@ export default function ScheduleScreen() {
         renderItem={({ item }) => (
           <PostCard
             post={{ ...item, is_bookmarked: true }}
-            onLike={() => handleLike(item)}
-            onBookmark={() => handleBookmark(item)}
+            onLike={() => toggleLike(item)}
+            onBookmark={() => toggleBookmark(item)}
           />
         )}
         renderSectionHeader={({ section }) => (
@@ -100,12 +74,14 @@ export default function ScheduleScreen() {
         }
         ListEmptyComponent={
           isLoading ? (
-            <ActivityIndicator color={colors.primary} style={styles.center} />
+            <PostListSkeleton count={5} />
+          ) : isError ? (
+            <ErrorState onRetry={refetch} />
           ) : (
             <EmptyState
-              icon="calendar-outline"
-              title="No events scheduled"
-              message="Bookmark events from the feed to add them to your schedule"
+              icon="bookmark-outline"
+              title="Nothing saved yet"
+              message="Tap Save on any post to catch it later"
             />
           )
         }
@@ -138,6 +114,7 @@ const styles = StyleSheet.create({
   list: {
     paddingTop: spacing.sm,
     paddingBottom: spacing['5xl'],
+    flexGrow: 1,
   },
   sectionHeader: {
     flexDirection: 'row',

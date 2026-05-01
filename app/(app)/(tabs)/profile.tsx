@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -12,15 +12,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { CrowdStatsBar } from '@/components/profile/CrowdStatsBar';
-import { ProfileTabs } from '@/components/profile/ProfileTabs';
 import { EventsList } from '@/components/profile/EventsList';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuthStore } from '@/stores/authStore';
 import { useCrowdStats } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/useFeed';
 import { notificationsService } from '@/services/notifications';
 import { colors, spacing, typography } from '@/theme';
-import type { ProfileTab } from '@/components/profile/ProfileTabs';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -28,7 +25,6 @@ export default function ProfileScreen() {
   const userId = session?.user?.id ?? '';
   const { data: stats } = useCrowdStats(userId);
   const { data: postsData, isLoading } = useUserPosts(userId);
-  const [tab, setTab] = useState<ProfileTab>('events');
 
   const { data: unreadCount } = useQuery({
     queryKey: ['unread-count'],
@@ -49,6 +45,9 @@ export default function ProfileScreen() {
           <TouchableOpacity
             onPress={() => router.push('/(app)/settings')}
             style={styles.settingsBtn}
+            accessibilityRole="button"
+            accessibilityLabel={hasUnread ? 'Settings (unread notifications)' : 'Settings'}
+            hitSlop={8}
           >
             <Ionicons name="settings-outline" size={24} color={colors.text} />
             {hasUnread && <View style={styles.notifDot} />}
@@ -78,46 +77,16 @@ export default function ProfileScreen() {
           <CrowdStatsBar stats={stats ?? defaultStats} />
         </View>
 
-        {/* Profile Tabs — 4 tabs for own profile */}
-        <ProfileTabs
-          active={tab}
-          onTabChange={setTab}
-          isOwnProfile={true}
-        />
-
-        {/* Tab content */}
+        {/* Events section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Your Events</Text>
+        </View>
         <View style={styles.tabContent}>
-          {tab === 'events' && (
-            <EventsList
-              posts={posts}
-              isLoading={isLoading}
-              emptyMessage="No events yet"
-            />
-          )}
-
-          {tab === 'personal' && (
-            <EventsList
-              posts={posts}
-              isLoading={isLoading}
-              emptyMessage="Your personal events will appear here"
-            />
-          )}
-
-          {tab === 'vip' && (
-            <EmptyState
-              icon="star-outline"
-              title="VIP Crowd"
-              message="Your exclusive community — coming soon"
-            />
-          )}
-
-          {tab === 'achievements' && (
-            <EmptyState
-              icon="trophy-outline"
-              title="Achievements"
-              message="Unlock badges and milestones — coming soon"
-            />
-          )}
+          <EventsList
+            posts={posts}
+            isLoading={isLoading}
+            emptyMessage="No events yet — tap the + tab to create one"
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -181,6 +150,17 @@ const styles = StyleSheet.create({
   statsArea: {
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.md,
+  },
+  sectionHeader: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  sectionTitle: {
+    ...typography.h3,
+    color: colors.text,
   },
   tabContent: {
     minHeight: 200,

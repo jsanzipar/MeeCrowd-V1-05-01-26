@@ -1,9 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, LayoutAnimation, Platform as RNPlatform } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import {
+  View, Text, StyleSheet, TouchableOpacity,
+  LayoutAnimation, Platform as RNPlatform,
+  ScrollView, useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, typography } from '@/theme';
 import { Avatar } from '@/components/ui/Avatar';
+import { FallbackImage } from '@/components/ui/FallbackImage';
 import { PlatformBadge } from '@/components/feed/PlatformBadge';
 import { EventTag } from '@/components/feed/EventTag';
 import { getEventStatus, formatEventTime } from '@/types';
@@ -26,6 +31,15 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
   const [expanded, setExpanded] = useState(false);
   const eventStatus = getEventStatus(post);
   const timeLabel = formatEventTime(post);
+
+  // Media sources: prefer media_urls (array), fall back to single thumbnail_url
+  const mediaList = useMemo<string[]>(() => {
+    if (post.media_urls && post.media_urls.length > 0) return post.media_urls;
+    if (post.thumbnail_url) return [post.thumbnail_url];
+    return [];
+  }, [post.media_urls, post.thumbnail_url]);
+  const firstMedia = mediaList[0] ?? null;
+  const extraMediaCount = Math.max(0, mediaList.length - 1);
 
   const toggleExpand = () => {
     if (RNPlatform.OS !== 'web') {
@@ -61,8 +75,15 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
           </View>
         </View>
 
-        {!expanded && post.thumbnail_url && (
-          <Image source={{ uri: post.thumbnail_url }} style={styles.compactThumb} />
+        {!expanded && firstMedia && (
+          <View>
+            <FallbackImage uri={firstMedia} style={styles.compactThumb} fallbackIconSize={18} />
+            {extraMediaCount > 0 && (
+              <View style={styles.compactThumbBadge}>
+                <Text style={styles.compactThumbBadgeText}>+{extraMediaCount}</Text>
+              </View>
+            )}
+          </View>
         )}
 
         <View style={styles.rightColumn}>
@@ -78,13 +99,19 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
             <Text style={styles.body}>{post.body}</Text>
           )}
 
-          {post.thumbnail_url && (
-            <Image source={{ uri: post.thumbnail_url }} style={styles.thumbnail} />
+          {mediaList.length > 0 && (
+            <MediaGallery uris={mediaList} />
           )}
 
           {/* Actions */}
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.action} onPress={onLike}>
+            <TouchableOpacity
+              style={styles.action}
+              onPress={onLike}
+              accessibilityRole="button"
+              accessibilityLabel={post.is_liked ? 'Unlike post' : 'Like post'}
+              accessibilityState={{ selected: post.is_liked }}
+            >
               <Ionicons
                 name={post.is_liked ? 'heart' : 'heart-outline'}
                 size={18}
@@ -96,6 +123,8 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
             <TouchableOpacity
               style={styles.action}
               onPress={() => router.push(`/(app)/post/${post.id}`)}
+              accessibilityRole="button"
+              accessibilityLabel={`View ${post.comment_count} comments`}
             >
               <Ionicons name="chatbubble-outline" size={16} color={colors.textMuted} />
               <Text style={styles.actionText}>{formatCount(post.comment_count)}</Text>
@@ -108,14 +137,20 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
 
             <View style={styles.actionSpacer} />
 
-            <TouchableOpacity style={styles.action} onPress={onBookmark}>
+            <TouchableOpacity
+              style={styles.action}
+              onPress={onBookmark}
+              accessibilityRole="button"
+              accessibilityLabel={post.is_bookmarked ? 'Unsave post' : 'Save post'}
+              accessibilityState={{ selected: post.is_bookmarked }}
+            >
               <Ionicons
                 name={post.is_bookmarked ? 'bookmark' : 'bookmark-outline'}
                 size={16}
                 color={post.is_bookmarked ? colors.primary : colors.textMuted}
               />
               <Text style={[styles.actionText, post.is_bookmarked && { color: colors.primary }]}>
-                {post.is_bookmarked ? 'Scheduled' : 'Schedule'}
+                {post.is_bookmarked ? 'Saved' : 'Save'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -144,6 +179,65 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
       {/* Soft separator */}
       <View style={styles.separator} />
     </TouchableOpacity>
+  );
+}
+
+/** Swipeable paginated gallery for multiple media items in the expanded view */
+function MediaGallery({ uris }: { uris: string[] }) {
+  const [index, setIndex] = useState(0);
+  const { width: screenWidth } = useWindowDimensions();
+  // Expanded area has 40px of paddingLeft and the card has spacing.md (12) on each side
+  const galleryWidth = Math.min(screenWidth, 600) - 40 - 12 - 12;
+
+  if (uris.length === 1) {
+    return (
+      <FallbackImage
+        uri={uris[0]}
+        style={[styles.thumbnail, { width: galleryWidth }]}
+        fallbackIconSize={32}
+      />
+    );
+  }
+
+  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const i = Math.round(e.nativeEvent.contentOffset.x / galleryWidth);
+    if (i !== index) setIndex(i);
+  };
+
+  return (
+    <View style={{ marginBottom: spacing.sm }}>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={handleScroll}
+        onScroll={handleScroll}
+        scrollEventThrottle={32}
+        decelerationRate="fast"
+        style={{ borderRadius: radius.md }}
+      >
+        {uris.map((uri, i) => (
+          <FallbackImage
+            key={i}
+            uri={uri}
+            style={{ width: galleryWidth, height: 200, backgroundColor: colors.surface }}
+            resizeMode="cover"
+            fallbackIconSize={32}
+          />
+        ))}
+      </ScrollView>
+      <View style={styles.dots}>
+        {uris.map((_, i) => (
+          <View
+            key={i}
+            style={[styles.dot, i === index && styles.dotActive]}
+          />
+        ))}
+      </View>
+      <View style={styles.galleryCounter}>
+        <Text style={styles.galleryCounterText}>{index + 1} / {uris.length}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -191,10 +285,55 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   compactThumb: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.sm,
+    width: 64,
+    height: 64,
+    borderRadius: radius.md,
     backgroundColor: colors.surface,
+  },
+  compactThumbBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderRadius: 6,
+  },
+  compactThumbBadgeText: {
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  dots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 5,
+    marginTop: 8,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.border,
+  },
+  dotActive: {
+    backgroundColor: colors.primary,
+    width: 18,
+  },
+  galleryCounter: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 10,
+  },
+  galleryCounterText: {
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   compactStats: {
     flexDirection: 'row',
@@ -205,7 +344,7 @@ const styles = StyleSheet.create({
   },
   statText: {
     ...typography.small,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     marginRight: spacing.sm,
   },
   expandedArea: {

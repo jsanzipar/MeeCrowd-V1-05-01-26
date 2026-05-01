@@ -1,12 +1,22 @@
 import { supabase } from '@/lib/supabase';
-import type { Post, Comment, FeedTab, SortFilter } from '@/types';
+import type { Post, Comment, FeedTab, SortFilter, Platform, ContentType } from '@/types';
 
 const POST_SELECT = `
   *,
   user:profiles!user_id (*)
 `;
 
-const PLATFORM_FILTERS = ['youtube', 'twitch', 'kick', 'instagram', 'tiktok', 'x', 'facebook', 'linkedin'];
+/**
+ * Sanitize a user-supplied search term before embedding into a PostgREST
+ * `.or()` / `.ilike` filter. Strips wildcards, filter separators, and
+ * quoting characters that could otherwise break the filter grammar or
+ * enable injection. Caps length to a reasonable ceiling.
+ */
+function sanitizeSearchTerm(q: string): string {
+  return q.replace(/[%_,()"'`\\*]/g, '').trim().slice(0, 80);
+}
+
+const PLATFORM_FILTERS = ['meecrowd', 'youtube', 'twitch', 'kick', 'instagram', 'tiktok', 'x', 'facebook', 'linkedin'];
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
   gaming: ['game', 'gaming', 'fortnite', 'valorant', 'elden', 'nerf', 'pc build'],
   music: ['music', 'song', 'concert', 'album', 'playlist', 'dj'],
@@ -216,14 +226,55 @@ export const postsService = {
   },
 
   async searchPosts(query: string): Promise<Post[]> {
+    const q = sanitizeSearchTerm(query);
+    if (!q) return [];
     const { data, error } = await supabase
       .from('posts')
       .select(POST_SELECT)
-      .or(`title.ilike.%${query}%,body.ilike.%${query}%`)
+      .or(`title.ilike.%${q}%,body.ilike.%${q}%`)
       .order('created_at', { ascending: false })
       .limit(30);
     if (error) throw error;
     return enrichPosts(data ?? []);
+  },
+
+  async createPost(input: {
+    title: string;
+    body?: string | null;
+    platform?: Platform;
+    content_type?: ContentType;
+    media_urls?: string[] | null;
+    thumbnail_url?: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
+    is_recurring?: boolean;
+    recurrence_rule?: string | null;
+    target_platforms?: Platform[]; // aspirational fan-out targets (logged in body meta for v1)
+  }): Promise<Post> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const payload = {
+      user_id: user.id,
+      title: input.title,
+      body: input.body ?? null,
+      platform: (input.platform ?? 'meecrowd') as Platform,
+      content_type: (input.content_type ?? 'post') as ContentType,
+      media_urls: input.media_urls ?? null,
+      thumbnail_url: input.thumbnail_url ?? input.media_urls?.[0] ?? null,
+      starts_at: input.starts_at ?? null,
+      ends_at: input.ends_at ?? null,
+      is_recurring: input.is_recurring ?? false,
+      recurrence_rule: input.recurrence_rule ?? null,
+    };
+
+    const { data, error } = await supabase
+      .from('posts')
+      .insert(payload)
+      .select(POST_SELECT)
+      .single();
+    if (error) throw error;
+    return data as Post;
   },
 
   async getBookmarkedPosts(): Promise<Post[]> {

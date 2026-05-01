@@ -1,0 +1,17 @@
+{
+  "_comment": "Edit this file to add or remove channels to track. The ingest scripts read this on each run. YouTube accepts either 'handle' (e.g. '@MrBeast') OR 'channel_id' (e.g. 'UCX6OQ3DkcsbYNE6H8uQQuVA'); if both are present, channel_id wins. Kick uses 'slug' (the URL path, e.g. kick.com/<slug>).",
+  "youtube": [
+    { "handle": "@MrBeast" },
+    { "handle": "@MKBHD" },
+    { "handle": "@LinusTechTips" },
+    { "handle": "@LofiGirl" },
+    { "handle": "@SkyNews" },
+    { "handle": "@NASA" },
+    { "handle": "@ALJAZEERAENGLISH" },
+    { "handle": "@ChilledCowMusic" }
+  ],
+  "kick": [
+    { "slug": "trainwreckstv" },
+    { "slug": "adinross" }
+  ]
+}

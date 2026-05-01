@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MeeCrowd — Draft 1: Event Poster</title>
+  <link rel="stylesheet" href="_shared.css">
+  <style>
+    .cover {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      background:
+        linear-gradient(180deg, rgba(10,10,15,0) 0%, rgba(10,10,15,0) 40%, rgba(10,10,15,0.95) 100%),
+        linear-gradient(135deg, rgba(255,60,120,0.25), rgba(100,60,255,0.5)),
+        url("https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800") center/cover;
+      flex-shrink: 0;
+    }
+    .cover-overlay {
+      position: absolute;
+      inset: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .cover-overlay .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .cover-title {
+      font-size: 28px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: #fff;
+      text-shadow: 0 2px 20px rgba(0,0,0,0.6);
+    }
+    .cover-sub {
+      font-size: 13px;
+      color: rgba(255,255,255,0.8);
+      margin-top: 8px;
+      font-weight: 500;
+    }
+    .cover-pill {
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(10px);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .cover-pill .dot {
+      width: 6px;
+      height: 6px;
+      background: #ff3b5c;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #ff3b5c;
+    }
+    .cover-camera {
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(10px);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .section {
+      padding: 18px 20px 0;
+    }
+    .label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #6a6a75;
+      margin-bottom: 10px;
+    }
+
+    .time-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: rgba(160,100,255,0.08);
+      border: 1px solid rgba(160,100,255,0.25);
+      border-radius: 16px;
+      padding: 14px 16px;
+    }
+    .time-card .cal {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: linear-gradient(180deg, #a066ff, #7a3dff);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    .time-card .cal .m { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; opacity: 0.9; margin-bottom: 2px; }
+    .time-card .cal .d { font-size: 18px; font-weight: 800; }
+    .time-card .info { flex: 1; }
+    .time-card .t1 { font-size: 15px; font-weight: 600; color: #fff; }
+    .time-card .t2 { font-size: 12px; color: #8a8a95; margin-top: 2px; }
+    .time-card .chev { color: #55555d; font-size: 18px; }
+
+    .platforms {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+    }
+    .plat {
+      aspect-ratio: 1;
+      background: rgba(255,255,255,0.04);
+      border: 1.5px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      padding: 10px;
+    }
+    .plat img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      filter: grayscale(1) brightness(0.6);
+      transition: filter 0.2s;
+    }
+    .plat.on {
+      background: rgba(160,100,255,0.08);
+      border-color: rgba(160,100,255,0.6);
+    }
+    .plat.on img { filter: none; }
+    .plat.locked {
+      background: rgba(160,100,255,0.12);
+      border-color: rgba(160,100,255,0.8);
+      box-shadow: 0 0 0 3px rgba(160,100,255,0.15);
+    }
+    .plat.locked img { filter: none; }
+    .plat .check {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      width: 18px;
+      height: 18px;
+      background: #a066ff;
+      border-radius: 50%;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 900;
+      border: 2px solid #0a0a0f;
+    }
+    .plat .lock {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      width: 18px;
+      height: 18px;
+      background: #c8a8ff;
+      border-radius: 50%;
+      color: #2a1a50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      border: 2px solid #0a0a0f;
+    }
+
+    .recur {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 14px;
+      margin-top: 10px;
+    }
+    .recur-l { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #c8c8cf; }
+    .toggle {
+      width: 42px;
+      height: 24px;
+      background: linear-gradient(135deg, #a066ff, #7a3dff);
+      border-radius: 999px;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .toggle::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="caption">Draft 1 — <strong>Event Poster</strong> · cover-first, flyer feel</div>
+
+  <div class="iphone">
+    <div class="screen">
+      <div class="status-bar"><span>9:41</span><span>●●●●●</span></div>
+
+      <div class="app-header">
+        <div class="icon-btn">✕</div>
+        <div class="app-title">New event</div>
+        <div class="text-btn">Draft</div>
+      </div>
+
+      <div class="body">
+        <div class="cover">
+          <div class="cover-overlay">
+            <div class="row">
+              <span class="cover-pill"><span class="dot"></span>Upcoming · Live stream</span>
+              <div class="cover-camera">📷</div>
+            </div>
+            <div>
+              <div class="cover-title">FRIDAY NIGHT<br>VALORANT GRIND</div>
+              <div class="cover-sub">Coming back after 2 weeks off — rank up push w/ the crew</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="label">When</div>
+          <div class="time-card">
+            <div class="cal"><div class="m">APR</div><div class="d">24</div></div>
+            <div class="info">
+              <div class="t1">Friday · 8:00 PM EDT</div>
+              <div class="t2">Ends around 11:00 PM · 3h</div>
+            </div>
+            <div class="chev">›</div>
+          </div>
+          <div class="recur">
+            <div class="recur-l">🔁 &nbsp;Repeats weekly on Fridays</div>
+            <div class="toggle"></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="label">Event type</div>
+          <div class="chip-row">
+            <span class="chip active">🔴 Live stream</span>
+            <span class="chip">▶ Premiere</span>
+            <span class="chip">🎤 AMA</span>
+            <span class="chip">🎵 Drop</span>
+            <span class="chip">📍 IRL</span>
+          </div>
+        </div>
+
+        <div class="section" style="padding-bottom: 20px;">
+          <div class="label">Broadcast to</div>
+          <div class="platforms">
+            <div class="plat locked"><img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/MeeCrowdLogoW.png"><span class="lock">🔒</span></div>
+            <div class="plat on"><img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/YouTubeLogo.png"><span class="check">✓</span></div>
+            <div class="plat on"><img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/TwitchLogo.png"><span class="check">✓</span></div>
+            <div class="plat"><img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/KickLogo.png"></div>
+            <div class="plat on"><img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/XLogo.png"><span class="check">✓</span></div>
+            <div class="plat"><img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/InstagramLogo.png"></div>
+            <div class="plat"><img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/TikTokLogo.png"></div>
+            <div class="plat"><img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/FacebookLogo.png"></div>
+            <div class="plat"><img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/LinkedInLogo.png"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cta-bar">
+        <button class="cta">Create event · 4 platforms</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

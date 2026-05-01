@@ -4,10 +4,10 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ScrollView,
   ActivityIndicator,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
@@ -18,7 +18,9 @@ import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/stores/authStore';
 import { usersService } from '@/services/users';
 import { storageService } from '@/services/storage';
-import { colors, spacing, radius, typography } from '@/theme';
+import { toast } from '@/lib/toast';
+import { haptics } from '@/lib/haptics';
+import { colors, spacing, typography } from '@/theme';
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -39,7 +41,10 @@ export default function EditProfileScreen() {
     if (Platform.OS !== 'web') {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please allow access to your photo library to change your avatar.');
+        toast.error({
+          title: 'Permission needed',
+          message: 'Allow photo library access to change your avatar.',
+        });
         return;
       }
     }
@@ -60,14 +65,17 @@ export default function EditProfileScreen() {
   const handleSave = async () => {
     if (!userId) return;
     if (!displayName.trim()) {
-      Alert.alert('Error', 'Display name is required');
+      haptics.warning();
+      toast.error({ title: 'Display name is required' });
       return;
     }
     if (!username.trim()) {
-      Alert.alert('Error', 'Username is required');
+      haptics.warning();
+      toast.error({ title: 'Username is required' });
       return;
     }
 
+    haptics.medium();
     setSaving(true);
     try {
       let finalAvatarUrl = profile?.avatar_url ?? null;
@@ -88,10 +96,14 @@ export default function EditProfileScreen() {
       });
 
       await loadProfile();
+      haptics.success();
+      toast.success({ title: 'Profile updated' });
       router.back();
     } catch (e: any) {
+      // Log for debugging; show user-friendly toast
       console.error('Edit profile save error:', e);
-      Alert.alert('Error', e.message ?? 'Failed to save profile');
+      haptics.error();
+      toast.fromError(e, 'Failed to save profile');
     } finally {
       setSaving(false);
       setUploadingImage(false);
@@ -99,80 +111,101 @@ export default function EditProfileScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Avatar section */}
-      <View style={styles.avatarSection}>
-        <TouchableOpacity onPress={pickImage} disabled={saving}>
-          <View>
-            <Avatar
-              uri={avatarUri}
-              name={displayName}
-              size={96}
-            />
-            <View style={styles.cameraButton}>
-              <Ionicons name="camera" size={16} color={colors.white} />
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Avatar section */}
+        <View style={styles.avatarSection}>
+          <TouchableOpacity
+            onPress={pickImage}
+            disabled={saving}
+            accessibilityRole="button"
+            accessibilityLabel="Change profile photo"
+          >
+            <View>
+              <Avatar
+                uri={avatarUri}
+                name={displayName}
+                size={96}
+              />
+              <View style={styles.cameraButton}>
+                <Ionicons name="camera" size={16} color={colors.white} />
+              </View>
             </View>
-          </View>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={pickImage} disabled={saving}>
-          <Text style={styles.changePhotoText}>Change Photo</Text>
-        </TouchableOpacity>
-        {uploadingImage && (
-          <ActivityIndicator color={colors.primary} style={styles.uploadIndicator} />
-        )}
-      </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={pickImage}
+            disabled={saving}
+            accessibilityRole="button"
+            accessibilityLabel="Change photo"
+          >
+            <Text style={styles.changePhotoText}>Change Photo</Text>
+          </TouchableOpacity>
+          {uploadingImage && (
+            <ActivityIndicator color={colors.primary} style={styles.uploadIndicator} />
+          )}
+        </View>
 
-      {/* Form fields */}
-      <Input
-        label="Display Name"
-        value={displayName}
-        onChangeText={setDisplayName}
-        placeholder="Your display name"
-        icon="person-outline"
-        editable={!saving}
-      />
+        {/* Form fields */}
+        <Input
+          label="Display Name"
+          value={displayName}
+          onChangeText={setDisplayName}
+          placeholder="Your display name"
+          icon="person-outline"
+          editable={!saving}
+        />
 
-      <Input
-        label="Username"
-        value={username}
-        onChangeText={(t) => setUsername(t.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-        placeholder="username"
-        icon="at-outline"
-        autoCapitalize="none"
-        editable={!saving}
-      />
+        <Input
+          label="Username"
+          value={username}
+          onChangeText={(t) => setUsername(t.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+          placeholder="username"
+          icon="at-outline"
+          autoCapitalize="none"
+          editable={!saving}
+        />
 
-      <Input
-        label="Bio"
-        value={bio}
-        onChangeText={setBio}
-        placeholder="Tell us about yourself"
-        icon="document-text-outline"
-        multiline
-        numberOfLines={3}
-        style={styles.bioInput}
-        editable={!saving}
-      />
+        <Input
+          label="Bio"
+          value={bio}
+          onChangeText={setBio}
+          placeholder="Tell us about yourself"
+          icon="document-text-outline"
+          multiline
+          numberOfLines={3}
+          style={styles.bioInput}
+          editable={!saving}
+        />
 
-      <Input
-        label="Website"
-        value={website}
-        onChangeText={setWebsite}
-        placeholder="https://yoursite.com"
-        icon="globe-outline"
-        autoCapitalize="none"
-        keyboardType="url"
-        editable={!saving}
-      />
+        <Input
+          label="Website"
+          value={website}
+          onChangeText={setWebsite}
+          placeholder="https://yoursite.com"
+          icon="globe-outline"
+          autoCapitalize="none"
+          keyboardType="url"
+          editable={!saving}
+        />
 
-      <Button
-        title={saving ? 'Saving...' : 'Save Changes'}
-        onPress={handleSave}
-        loading={saving}
-        size="lg"
-        style={styles.saveButton}
-      />
-    </ScrollView>
+        <Button
+          title={saving ? 'Saving...' : 'Save Changes'}
+          onPress={handleSave}
+          loading={saving}
+          size="lg"
+          style={styles.saveButton}
+        />
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

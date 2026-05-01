@@ -13,18 +13,28 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { FeedTabs } from '@/components/feed/FeedTabs';
 import { PostCard } from '@/components/feed/PostCard';
+import { LivePostCard } from '@/components/feed/LivePostCard';
 import { SortFilters, ActiveFilterChips, CountryPicker } from '@/components/feed/SortFilters';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { PostListSkeleton } from '@/components/ui/Skeleton';
 import { useFeed, useSearchPosts } from '@/hooks/useFeed';
+import { useLiveNow } from '@/hooks/useAggregation';
 import { useFeedStore } from '@/stores/feedStore';
-import { postsService } from '@/services/posts';
-import { queryClient } from '@/lib/queryClient';
+import { usePostActions } from '@/hooks/usePostActions';
 import { colors, spacing, radius, typography } from '@/theme';
-import type { Post } from '@/types';
+import type { Post, ExternalLiveNowRow } from '@/types';
 
-const LOGO_URL = 'https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/MeeCrowdLogoW.png';
+// Discriminated union so the same FlatList can render both regular posts
+// and ingested live streams without coercing one into the other.
+type FeedItem =
+  | { kind: 'post'; data: Post }
+  | { kind: 'live'; data: ExternalLiveNowRow };
+
+const LOGO = require('@/assets/images/logo-w.png');
 
 export default function FeedScreen() {
   const {
@@ -40,45 +50,47 @@ export default function FeedScreen() {
 
   const feed = useFeed(activeTab, activeFilters);
   const search = useSearchPosts(searchQuery);
+  // Only fetch live streams while on Trending and not searching — keeps
+  // the Upcoming tab and the search results focused.
+  const liveQuery = useLiveNow();
+  const liveData = !isSearching && activeTab === 'trending'
+    ? (liveQuery.data ?? [])
+    : [];
+  const { toggleLike, toggleBookmark } = usePostActions();
 
-  const posts = isSearching && searchQuery.length >= 2
-    ? (search.data ?? [])
-    : (feed.data?.pages.flat() ?? []);
+  // Build the unified feed list. Live streams pin to the top of Trending,
+  // ordered by viewer count (already sorted by useLiveNow).
+  const items = React.useMemo<FeedItem[]>(() => {
+    if (isSearching && searchQuery.length >= 2) {
+      return (search.data ?? []).map((p) => ({ kind: 'post', data: p }));
+    }
+    const posts = feed.data?.pages.flat() ?? [];
+    const liveItems: FeedItem[] = liveData.map((row) => ({ kind: 'live', data: row }));
+    const postItems: FeedItem[] = posts.map((p) => ({ kind: 'post', data: p }));
+    return [...liveItems, ...postItems];
+  }, [isSearching, searchQuery, search.data, feed.data, liveData]);
 
   const isLoading = isSearching ? search.isLoading : feed.isLoading;
+  const isError = isSearching ? search.isError : feed.isError;
 
-  const handleLike = useCallback(async (post: Post) => {
-    try {
-      if (post.is_liked) {
-        await postsService.unlikePost(post.id);
-      } else {
-        await postsService.likePost(post.id);
-      }
-      queryClient.invalidateQueries({ queryKey: ['feed'] });
-      queryClient.invalidateQueries({ queryKey: ['search-posts'] });
-    } catch {}
-  }, []);
+  const renderItem = useCallback(({ item }: { item: FeedItem }) => {
+    if (item.kind === 'live') {
+      return <LivePostCard row={item.data} />;
+    }
+    return (
+      <PostCard
+        post={item.data}
+        onLike={() => toggleLike(item.data)}
+        onBookmark={() => toggleBookmark(item.data)}
+      />
+    );
+  }, [toggleLike, toggleBookmark]);
 
-  const handleBookmark = useCallback(async (post: Post) => {
-    try {
-      if (post.is_bookmarked) {
-        await postsService.unbookmarkPost(post.id);
-      } else {
-        await postsService.bookmarkPost(post.id);
-      }
-      queryClient.invalidateQueries({ queryKey: ['feed'] });
-      queryClient.invalidateQueries({ queryKey: ['search-posts'] });
-      queryClient.invalidateQueries({ queryKey: ['bookmarked-posts'] });
-    } catch {}
-  }, []);
-
-  const renderPost = useCallback(({ item }: { item: Post }) => (
-    <PostCard
-      post={item}
-      onLike={() => handleLike(item)}
-      onBookmark={() => handleBookmark(item)}
-    />
-  ), [handleLike, handleBookmark]);
+  const keyExtractor = useCallback(
+    (item: FeedItem) =>
+      item.kind === 'live' ? `live-${item.data.content_id}` : item.data.id,
+    []
+  );
 
   const closePanels = () => {
     setShowSortPanel(false);
@@ -89,7 +101,7 @@ export default function FeedScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header with logo + split search/sort bar */}
       <View style={styles.headerBar}>
-        <Image source={{ uri: LOGO_URL }} style={styles.logo} resizeMode="contain" />
+        <Image source={LOGO} style={styles.logo} resizeMode="contain" />
         <View style={styles.barContainer}>
           {/* Search half (left) */}
           <View style={styles.searchHalf}>
@@ -113,18 +125,25 @@ export default function FeedScreen() {
                 if (!searchQuery) setIsSearching(false);
               }}
               returnKeyType="search"
+              accessibilityLabel="Search events and creators"
             />
             {searchQuery.length > 0 && (
-              <Ionicons
-                name="close-circle"
-                size={14}
-                color={colors.textMuted}
+              <Pressable
                 onPress={() => {
                   setSearchQuery('');
                   setIsSearching(false);
                   searchRef.current?.blur();
                 }}
-              />
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={14}
+                  color={colors.textMuted}
+                />
+              </Pressable>
             )}
           </View>
 
@@ -143,6 +162,8 @@ export default function FeedScreen() {
               toggleSortPanel();
             }}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Sort and filter"
           >
             {activeFilters.length > 0 ? (
               <ActiveFilterChips
@@ -179,9 +200,9 @@ export default function FeedScreen() {
       )}
 
       <FlatList
-        data={posts}
-        renderItem={renderPost}
-        keyExtractor={(item) => item.id}
+        data={items}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         onScrollBeginDrag={closePanels}
@@ -208,7 +229,11 @@ export default function FeedScreen() {
         }
         ListEmptyComponent={
           isLoading ? (
-            <ActivityIndicator color={colors.primary} style={styles.center} />
+            <PostListSkeleton count={6} />
+          ) : isError ? (
+            <ErrorState
+              onRetry={() => (isSearching ? search.refetch() : feed.refetch())}
+            />
           ) : isSearching && searchQuery.length >= 2 ? (
             <EmptyState
               icon="search-outline"
@@ -240,6 +265,19 @@ export default function FeedScreen() {
           onClose={() => setShowCountryPicker(false)}
         />
       )}
+
+      {/* Floating Action Button — New post */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Create new post"
+        onPress={() => router.push('/(app)/post/create')}
+        style={({ pressed }) => [
+          styles.fab,
+          pressed && { transform: [{ scale: 0.94 }], opacity: 0.9 },
+        ]}
+      >
+        <Ionicons name="add" size={28} color={colors.white} />
+      </Pressable>
     </SafeAreaView>
   );
 }
@@ -301,12 +339,31 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingTop: spacing.sm,
-    paddingBottom: spacing['5xl'],
+    // 120 clears the tab bar (~80) plus the FAB (56 + bottom spacing.xl offset)
+    // so the final card never sits under the plus button.
+    paddingBottom: 120,
+    flexGrow: 1,
   },
   footer: {
     paddingVertical: spacing.xl,
   },
   center: {
     marginTop: spacing['5xl'],
+  },
+  fab: {
+    position: 'absolute',
+    right: spacing.lg,
+    bottom: spacing.xl + 64, // above the tab bar
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 8,
   },
 });

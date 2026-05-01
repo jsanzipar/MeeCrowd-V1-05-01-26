@@ -70,6 +70,66 @@ export default function AppLayout() {
           animation: 'slide_from_right',
         }}
       />
+      <Stack.Screen
+        name="settings/blocked"
+        options={{
+          headerShown: true,
+          headerTitle: 'Blocked Users',
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.text,
+          animation: 'slide_from_right',
+        }}
+      />
+      <Stack.Screen
+        name="settings/delete-account"
+        options={{
+          headerShown: true,
+          headerTitle: 'Delete Account',
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.text,
+          animation: 'slide_from_right',
+        }}
+      />
+      <Stack.Screen
+        name="aggregation/index"
+        options={{
+          headerShown: true,
+          headerTitle: 'Aggregated Channels',
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.text,
+          animation: 'slide_from_right',
+        }}
+      />
+      <Stack.Screen
+        name="aggregation/channel/[id]"
+        options={{
+          headerShown: true,
+          headerTitle: 'Channel',
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.text,
+          animation: 'slide_from_right',
+        }}
+      />
+      <Stack.Screen
+        name="aggregation/content/[id]"
+        options={{
+          headerShown: true,
+          headerTitle: 'Content',
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.text,
+          animation: 'slide_from_right',
+        }}
+      />
+      <Stack.Screen
+        name="external/[id]"
+        options={{
+          headerShown: true,
+          headerTitle: 'Channel',
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.text,
+          animation: 'slide_from_right',
+        }}
+      />
     </Stack>
   );
 }

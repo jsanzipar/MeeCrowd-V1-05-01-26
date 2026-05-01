@@ -1,11 +1,11 @@
-export type Platform = 'youtube' | 'twitch' | 'kick' | 'instagram' | 'tiktok' | 'x' | 'facebook' | 'linkedin';
+export type Platform = 'meecrowd' | 'youtube' | 'twitch' | 'kick' | 'instagram' | 'tiktok' | 'x' | 'facebook' | 'linkedin';
 
 export type FeedTab = 'upcoming' | 'trending';
 
 export type SortFilter =
   | 'following'
   | 'streamers'
-  | 'youtube' | 'twitch' | 'kick' | 'instagram' | 'tiktok' | 'x' | 'facebook' | 'linkedin'
+  | 'meecrowd' | 'youtube' | 'twitch' | 'kick' | 'instagram' | 'tiktok' | 'x' | 'facebook' | 'linkedin'
   | 'near-me'
   | 'location'
   | 'broadcasters'
@@ -133,6 +133,7 @@ export interface Post {
   ends_at: string | null;
   is_recurring: boolean;
   recurrence_rule: string | null;
+  media_urls: string[] | null;
   created_at: string;
   updated_at: string;
   // Joined data
@@ -208,4 +209,129 @@ export function formatEventTime(post: Post): string {
   if (hrs < 24) return `${hrs}h ago`;
   if (days < 30) return `${days}d ago`;
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// ── External Aggregation (read-only ingest from YouTube/Twitch/Kick/...) ──
+
+export type ExternalPlatformSlug = 'youtube' | 'twitch' | 'kick' | string;
+
+export type ExternalContentKind =
+  | 'video'
+  | 'live'
+  | 'short'
+  | 'clip'
+  | 'vod'
+  | 'premiere';
+
+export interface ExternalPlatform {
+  id: number;
+  slug: ExternalPlatformSlug;
+  display_name: string;
+  logo_url: string | null;
+  channel_url_template: string | null;
+  embed_url_template: string | null;
+  enabled: boolean;
+}
+
+export interface ExternalChannel {
+  id: string;
+  platform_id: number;
+  platform_external_id: string;
+  handle: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  banner_url: string | null;
+  description: string | null;
+  channel_url: string | null;
+  country: string | null;
+  language: string | null;
+  verified: boolean;
+  subscriber_count: number;
+  total_view_count: number;
+  video_count: number;
+  user_id: string | null;
+  claimed_at: string | null;
+  extra_data: Record<string, any>;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined
+  platform?: ExternalPlatform;
+  latest_metrics?: ExternalContentMetrics | null;
+}
+
+export interface ExternalContent {
+  id: string;
+  channel_id: string;
+  platform_id: number;
+  external_id: string;
+  kind: ExternalContentKind;
+  title: string | null;
+  description: string | null;
+  url: string | null;
+  embed_url: string | null;
+  thumbnail_url: string | null;
+  duration_seconds: number | null;
+  is_live: boolean;
+  language: string | null;
+  category: string | null;
+  published_at: string | null;
+  scheduled_start_at: string | null;
+  extra_data: Record<string, any>;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined
+  channel?: ExternalChannel;
+  platform?: ExternalPlatform;
+  latest_metrics?: ExternalContentMetrics | null;
+}
+
+export interface ExternalContentMetrics {
+  id: string;
+  content_id: string;
+  snapshot_at: string;
+  view_count: number | null;
+  like_count: number | null;
+  dislike_count: number | null;
+  comment_count: number | null;
+  share_count: number | null;
+  current_viewer_count: number | null;
+}
+
+export interface ExternalComment {
+  id: string;
+  content_id: string;
+  external_id: string;
+  author_external_id: string | null;
+  author_handle: string | null;
+  author_display_name: string | null;
+  author_avatar_url: string | null;
+  body: string;
+  like_count: number;
+  reply_count: number;
+  posted_at: string | null;
+  fetched_at: string;
+}
+
+// Convenience row from the external_live_now view
+export interface ExternalLiveNowRow {
+  content_id: string;
+  title: string | null;
+  url: string | null;
+  embed_url: string | null;
+  thumbnail_url: string | null;
+  started_at: string | null;
+  category: string | null;
+  channel_id: string;
+  handle: string | null;
+  channel_name: string | null;
+  channel_avatar: string | null;
+  subscriber_count: number;
+  platform_slug: ExternalPlatformSlug;
+  platform_name: string;
+  current_viewer_count: number | null;
+  view_count: number | null;
+  like_count: number | null;
+  comment_count: number | null;
 }

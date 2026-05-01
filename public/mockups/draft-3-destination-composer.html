@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MeeCrowd — Draft 3: Destination-Aware Composer</title>
+  <link rel="stylesheet" href="_shared.css">
+  <style>
+    .section { padding: 16px 20px 0; }
+    .label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #6a6a75;
+      margin-bottom: 10px;
+    }
+
+    /* Destination chips with char budget */
+    .dest-strip {
+      display: flex;
+      gap: 8px;
+      padding: 14px 20px 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .dest-strip::-webkit-scrollbar { display: none; }
+    .dest-chip {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 999px;
+      padding: 8px 14px 8px 8px;
+    }
+    .dest-chip img {
+      width: 20px;
+      height: 20px;
+      object-fit: contain;
+      filter: grayscale(1) brightness(0.5);
+    }
+    .dest-chip .n { font-size: 13px; font-weight: 600; color: #8a8a95; }
+    .dest-chip .budget {
+      font-size: 11px;
+      font-weight: 700;
+      color: #55555d;
+      font-variant-numeric: tabular-nums;
+    }
+    .dest-chip.on {
+      background: rgba(160,100,255,0.1);
+      border-color: rgba(160,100,255,0.4);
+    }
+    .dest-chip.on img { filter: none; }
+    .dest-chip.on .n { color: #e6d9ff; }
+    .dest-chip.on .budget { color: #a066ff; }
+    .dest-chip.over {
+      background: rgba(255,60,100,0.1);
+      border-color: rgba(255,60,100,0.4);
+    }
+    .dest-chip.over img { filter: none; }
+    .dest-chip.over .n { color: #ffbfcc; }
+    .dest-chip.over .budget { color: #ff3b64; }
+    .dest-chip.locked {
+      background: rgba(160,100,255,0.14);
+      border-color: rgba(160,100,255,0.8);
+    }
+    .dest-chip.locked img { filter: none; }
+    .dest-chip.locked .n { color: #e6d9ff; }
+    .dest-chip.locked .budget { color: #c8a8ff; }
+
+    /* Text compose area */
+    .compose {
+      padding: 10px 20px 8px;
+    }
+    .compose-text {
+      font-size: 17px;
+      line-height: 1.5;
+      color: #edeef2;
+      padding: 10px 0;
+      min-height: 100px;
+    }
+    .compose-text .mention { color: #a066ff; font-weight: 600; }
+    .compose-text .ellipsis {
+      background: rgba(255,60,100,0.15);
+      color: #ffbfcc;
+      border-radius: 3px;
+      padding: 0 2px;
+    }
+    .counter-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+    .counter {
+      font-size: 12px;
+      color: #8a8a95;
+      font-variant-numeric: tabular-nums;
+    }
+    .counter strong { color: #ff3b64; font-weight: 700; }
+    .media-row {
+      display: flex;
+      gap: 8px;
+      padding: 0 20px 4px;
+    }
+    .media-thumb {
+      width: 60px;
+      height: 60px;
+      border-radius: 10px;
+      background-size: cover;
+      background-position: center;
+    }
+    .media-add {
+      width: 60px;
+      height: 60px;
+      border-radius: 10px;
+      border: 1.5px dashed rgba(255,255,255,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      color: #55555d;
+    }
+
+    /* Preview tabs */
+    .preview-tabs {
+      display: flex;
+      gap: 6px;
+      padding: 18px 20px 10px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .preview-tabs::-webkit-scrollbar { display: none; }
+    .prev-tab {
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.04);
+      color: #8a8a95;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .prev-tab.active {
+      background: #edeef2;
+      color: #0a0a0f;
+    }
+
+    /* Preview card — IG style */
+    .preview-frame {
+      margin: 0 20px 16px;
+      background: #fff;
+      color: #1a1a1a;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    }
+    .ig-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+    }
+    .ig-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background:
+        linear-gradient(135deg, #f58529, #dd2a7b, #8134af) border-box;
+      padding: 2px;
+    }
+    .ig-avatar-inner {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background-image: url('https://images.unsplash.com/photo-1502685104226-ee32379fefbe?w=100');
+      background-size: cover;
+      background-position: center;
+      border: 2px solid white;
+    }
+    .ig-user { flex: 1; font-size: 13px; font-weight: 600; color: #1a1a1a; }
+    .ig-dots { color: #1a1a1a; font-size: 18px; font-weight: 700; }
+    .ig-image {
+      aspect-ratio: 1;
+      background:
+        linear-gradient(135deg, rgba(245,133,41,0.3), rgba(221,42,123,0.3)),
+        url('https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500') center/cover;
+    }
+    .ig-actions {
+      display: flex;
+      gap: 14px;
+      padding: 10px 12px 4px;
+      font-size: 20px;
+    }
+    .ig-actions span { cursor: pointer; }
+    .ig-actions .spacer { flex: 1; }
+    .ig-caption {
+      padding: 4px 12px 12px;
+      font-size: 13px;
+      line-height: 1.4;
+      color: #1a1a1a;
+    }
+    .ig-caption b { font-weight: 600; }
+    .ig-caption .more { color: #888; }
+
+    /* Scheduled pill at bottom */
+    .when-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 20px 10px;
+    }
+    .when-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(160,100,255,0.12);
+      border: 1px solid rgba(160,100,255,0.3);
+      color: #e6d9ff;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .adapt-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #8a8a95;
+      font-weight: 600;
+    }
+    .adapt-toggle .mini-toggle {
+      width: 30px;
+      height: 18px;
+      background: linear-gradient(135deg, #a066ff, #7a3dff);
+      border-radius: 999px;
+      position: relative;
+    }
+    .adapt-toggle .mini-toggle::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 14px;
+      height: 14px;
+      background: white;
+      border-radius: 50%;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="caption">Draft 3 — <strong>Destination-Aware</strong> · platforms first, live per-platform previews</div>
+
+  <div class="iphone">
+    <div class="screen">
+      <div class="status-bar"><span>9:41</span><span>●●●●●</span></div>
+
+      <div class="app-header">
+        <div class="icon-btn">✕</div>
+        <div class="app-title">Compose</div>
+        <div class="text-btn">Post</div>
+      </div>
+
+      <div class="body">
+        <div class="dest-strip">
+          <div class="dest-chip locked">
+            <img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/MeeCrowdLogoW.png">
+            <span class="n">MeeCrowd</span>
+            <span class="budget">∞</span>
+          </div>
+          <div class="dest-chip over">
+            <img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/XLogo.png">
+            <span class="n">X</span>
+            <span class="budget">312 / 280</span>
+          </div>
+          <div class="dest-chip on">
+            <img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/InstagramLogo.png">
+            <span class="n">Instagram</span>
+            <span class="budget">312 / 2,200</span>
+          </div>
+          <div class="dest-chip on">
+            <img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/YouTubeLogo.png">
+            <span class="n">YouTube</span>
+            <span class="budget">312 / 5,000</span>
+          </div>
+          <div class="dest-chip">
+            <img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/TikTokLogo.png">
+            <span class="n">TikTok</span>
+            <span class="budget">＋</span>
+          </div>
+        </div>
+
+        <div class="compose">
+          <div class="compose-text">
+            Going live in 30 min — dropping a new Valorant vid tomorrow at 7pm. What rank should I grind to this season? Drop your guesses below, loser buys pizza for the squad<span class="ellipsis"> — also releasing the tournament VOD later tonight, stay tuned</span> 🎮
+          </div>
+          <div class="counter-row">
+            <span class="counter"><strong>X will truncate</strong> · 32 chars over</span>
+            <span style="font-size:12px; color:#a066ff; font-weight:600;">Auto-shorten ✨</span>
+          </div>
+        </div>
+
+        <div class="media-row">
+          <div class="media-thumb" style="background-image:url('https://images.unsplash.com/photo-1542751371-adc38448a05e?w=300');"></div>
+          <div class="media-thumb" style="background-image:url('https://images.unsplash.com/photo-1556438064-2d7646166914?w=300');"></div>
+          <div class="media-add">+</div>
+        </div>
+
+        <div class="preview-tabs">
+          <div class="prev-tab">As X</div>
+          <div class="prev-tab active">As Instagram</div>
+          <div class="prev-tab">As YouTube</div>
+          <div class="prev-tab">As MeeCrowd</div>
+        </div>
+
+        <div class="preview-frame">
+          <div class="ig-head">
+            <div class="ig-avatar"><div class="ig-avatar-inner"></div></div>
+            <div class="ig-user">jaime.sanz</div>
+            <div class="ig-dots">⋯</div>
+          </div>
+          <div class="ig-image"></div>
+          <div class="ig-actions">
+            <span>♡</span><span>💬</span><span>↗</span><span class="spacer"></span><span>🔖</span>
+          </div>
+          <div class="ig-caption">
+            <b>jaime.sanz</b> Going live in 30 min — dropping a new Valorant vid tomorrow at 7pm. What rank should I grind to this season? Drop your guesses below, loser buys pizza for the squad — also releasing the tournament VOD later tonight, stay tuned 🎮 <span class="more">more</span>
+          </div>
+        </div>
+
+        <div class="when-row">
+          <div class="when-pill">📅 &nbsp;Post now ▾</div>
+          <div class="adapt-toggle">Adapt per platform <div class="mini-toggle"></div></div>
+        </div>
+
+        <div style="height: 16px"></div>
+      </div>
+
+      <div class="cta-bar">
+        <button class="cta">Publish to 3 platforms</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

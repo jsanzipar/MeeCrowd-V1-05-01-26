@@ -16,9 +16,10 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.meecrowd.app",
+      "buildNumber": "1",
       "infoPlist": {
-        "NSCameraUsageDescription": "MeeCrowd needs camera access to take profile photos",
-        "NSPhotoLibraryUsageDescription": "MeeCrowd needs photo library access to set profile pictures"
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "MeeCrowd needs access to your photos so you can upload media to your posts and choose a profile picture."
       }
     },
     "android": {
@@ -27,7 +28,8 @@
         "backgroundColor": "#0A0A12"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.meecrowd.app"
+      "package": "com.meecrowd.app",
+      "versionCode": 1
     },
     "web": {
       "bundler": "metro",
@@ -37,7 +39,16 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-splash-screen"
+      "expo-splash-screen",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "MeeCrowd needs access to your photos so you can upload media to your posts and choose a profile picture.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

@@ -21,6 +21,9 @@ export function FeedTabs({ activeTab, onTabChange }: FeedTabsProps) {
           key={key}
           onPress={() => onTabChange(key)}
           style={[styles.tab, activeTab === key && styles.activeTab]}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === key }}
+          accessibilityLabel={`${label} feed`}
         >
           <Text style={[styles.label, activeTab === key && styles.activeLabel]}>
             {label}

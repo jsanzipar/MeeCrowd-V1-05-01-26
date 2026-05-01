@@ -45,3 +45,32 @@ supabase/*.sh
 # generated native folders
 /ios
 /android
+
+# EAS / App Store artifacts
+eas.json.bak
+secrets/
+*.ipa
+*.aab
+*.apk
+google-services.json
+GoogleService-Info.plist
+
+# Supabase local state
+supabase/.branches/
+supabase/.temp/
+supabase/migrations/*.backup.sql
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+

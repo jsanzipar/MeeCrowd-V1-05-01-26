@@ -1,11 +1,28 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  Linking,
+  ScrollView,
+  Platform,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
 import { notificationsService } from '@/services/notifications';
-import { colors, spacing, radius, typography } from '@/theme';
+import { toast } from '@/lib/toast';
+import { colors, spacing, typography } from '@/theme';
+
+const TERMS_URL =
+  process.env.EXPO_PUBLIC_TERMS_URL ?? 'https://meecrowd.com/terms';
+const PRIVACY_URL =
+  process.env.EXPO_PUBLIC_PRIVACY_URL ?? 'https://meecrowd.com/privacy';
+const SUPPORT_EMAIL =
+  process.env.EXPO_PUBLIC_SUPPORT_EMAIL ?? 'support@meecrowd.com';
 
 interface SettingsRowProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -13,17 +30,28 @@ interface SettingsRowProps {
   onPress: () => void;
   danger?: boolean;
   badge?: number;
+  sublabel?: string;
 }
 
-function SettingsRow({ icon, label, onPress, danger, badge }: SettingsRowProps) {
+function SettingsRow({
+  icon,
+  label,
+  onPress,
+  danger,
+  badge,
+  sublabel,
+}: SettingsRowProps) {
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress}>
+    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
       <Ionicons
         name={icon}
         size={22}
         color={danger ? colors.error : colors.textSecondary}
       />
-      <Text style={[styles.rowLabel, danger && styles.danger]}>{label}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.rowLabel, danger && styles.danger]}>{label}</Text>
+        {sublabel && <Text style={styles.rowSublabel}>{sublabel}</Text>}
+      </View>
       {badge != null && badge > 0 && (
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
@@ -36,7 +64,7 @@ function SettingsRow({ icon, label, onPress, danger, badge }: SettingsRowProps) 
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { signOut, profile } = useAuthStore();
+  const { signOut } = useAuthStore();
 
   const { data: unreadCount } = useQuery({
     queryKey: ['unread-count'],
@@ -45,15 +73,42 @@ export default function SettingsScreen() {
   });
 
   const handleSignOut = () => {
-    Alert.alert('Sign Out', 'Are you sure?', [
+    // react-native-web's Alert.alert is effectively a no-op — it silently
+    // swallows the call and never fires the confirm button's onPress. So on
+    // web we fall back to window.confirm; on native we get the real Alert.
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      if (typeof window !== 'undefined' && window.confirm('Are you sure you want to sign out?')) {
+        signOut();
+      }
+      return;
+    }
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign Out', style: 'destructive', onPress: signOut },
     ]);
   };
 
+  const openUrl = async (url: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      // Alert.alert is a silent no-op on rn-web; toast works cross-platform.
+      toast.error({ title: "Couldn't open link", message: 'Please try again later.' });
+    }
+  };
+
+  const openSupportEmail = () => {
+    const subject = encodeURIComponent('MeeCrowd Support');
+    openUrl(`mailto:${SUPPORT_EMAIL}?subject=${subject}`);
+  };
+
   return (
-    <View style={styles.container}>
-      {/* Alerts section */}
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+    >
+      {/* Alerts */}
       <View style={styles.section}>
         <SettingsRow
           icon="notifications-outline"
@@ -63,6 +118,7 @@ export default function SettingsScreen() {
         />
       </View>
 
+      {/* Account */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account</Text>
         <SettingsRow
@@ -70,48 +126,56 @@ export default function SettingsScreen() {
           label="Edit Profile"
           onPress={() => router.push('/(app)/settings/edit-profile')}
         />
+      </View>
+
+      {/* Safety */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Safety</Text>
         <SettingsRow
-          icon="link-outline"
-          label="Connected Platforms"
-          onPress={() => router.push('/(app)/settings/platforms')}
-        />
-        <SettingsRow
-          icon="options-outline"
-          label="Notification Preferences"
-          onPress={() => Alert.alert('Coming soon')}
+          icon="ban-outline"
+          label="Blocked Users"
+          onPress={() => router.push('/(app)/settings/blocked')}
         />
       </View>
 
+      {/* Legal & Support */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Support</Text>
-        <SettingsRow
-          icon="help-circle-outline"
-          label="Help & FAQ"
-          onPress={() => Alert.alert('Coming soon')}
-        />
+        <Text style={styles.sectionTitle}>Legal & Support</Text>
         <SettingsRow
           icon="document-text-outline"
           label="Terms of Service"
-          onPress={() => Alert.alert('Coming soon')}
+          onPress={() => openUrl(TERMS_URL)}
         />
         <SettingsRow
           icon="shield-outline"
           label="Privacy Policy"
-          onPress={() => Alert.alert('Coming soon')}
+          onPress={() => openUrl(PRIVACY_URL)}
+        />
+        <SettingsRow
+          icon="help-circle-outline"
+          label="Contact Support"
+          sublabel={SUPPORT_EMAIL}
+          onPress={openSupportEmail}
         />
       </View>
 
+      {/* Danger zone */}
       <View style={styles.section}>
         <SettingsRow
           icon="log-out-outline"
           label="Sign Out"
           onPress={handleSignOut}
+        />
+        <SettingsRow
+          icon="trash-outline"
+          label="Delete Account"
+          onPress={() => router.push('/(app)/settings/delete-account')}
           danger
         />
       </View>
 
       <Text style={styles.version}>MeeCrowd v1.0.0</Text>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -119,6 +183,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  contentContainer: {
+    paddingBottom: spacing['3xl'],
   },
   section: {
     marginTop: spacing.xl,
@@ -143,7 +210,11 @@ const styles = StyleSheet.create({
   rowLabel: {
     ...typography.body,
     color: colors.text,
-    flex: 1,
+  },
+  rowSublabel: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginTop: 2,
   },
   danger: {
     color: colors.error,

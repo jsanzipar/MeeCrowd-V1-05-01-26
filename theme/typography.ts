@@ -1,20 +1,26 @@
 import { TextStyle } from 'react-native';
 
+// Tighter letter-spacing on display sizes is a signal of modern editorial
+// design (Linear, Arc, Vercel, Apple Music all use negative tracking on
+// headlines). Body copy stays at 0 for maximum legibility.
 export const typography = {
   h1: {
     fontSize: 28,
     fontWeight: '700',
     lineHeight: 34,
+    letterSpacing: -0.5,
   } as TextStyle,
   h2: {
     fontSize: 22,
     fontWeight: '700',
     lineHeight: 28,
+    letterSpacing: -0.3,
   } as TextStyle,
   h3: {
     fontSize: 18,
     fontWeight: '600',
     lineHeight: 24,
+    letterSpacing: -0.15,
   } as TextStyle,
   body: {
     fontSize: 15,
@@ -40,5 +46,6 @@ export const typography = {
     fontSize: 16,
     fontWeight: '600',
     lineHeight: 22,
+    letterSpacing: -0.1,
   } as TextStyle,
 } as const;

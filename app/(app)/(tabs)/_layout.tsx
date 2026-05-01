@@ -1,10 +1,10 @@
 import { Tabs } from 'expo-router';
-import { Image, View, StyleSheet } from 'react-native';
+import { Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/theme';
 
-const LOGO_ICON_URL =
-  'https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/MeeCrowdLogoW.png';
+// Local asset — avoids network fetch on every render + works offline
+const LOGO_ICON = require('@/assets/images/logo-w.png');
 
 export default function TabLayout() {
   return (
@@ -30,7 +30,7 @@ export default function TabLayout() {
           title: 'Feed',
           tabBarIcon: ({ color }) => (
             <Image
-              source={{ uri: LOGO_ICON_URL }}
+              source={LOGO_ICON}
               style={[iconStyles.logo, { tintColor: color }]}
               resizeMode="contain"
             />
@@ -40,7 +40,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="schedule"
         options={{
-          title: 'Schedule',
+          title: 'Saved',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="bookmark" size={size} color={color} />
           ),

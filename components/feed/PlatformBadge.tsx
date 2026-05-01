@@ -5,6 +5,7 @@ import type { Platform } from '@/types';
 const STORAGE_BASE = 'https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos';
 
 const platformLogo: Record<Platform, string> = {
+  meecrowd: 'https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/MeeCrowdLogoW.png',
   youtube: `${STORAGE_BASE}/YouTubeLogo.png`,
   twitch: `${STORAGE_BASE}/TwitchLogo.png`,
   kick: `${STORAGE_BASE}/KickLogo.png`,

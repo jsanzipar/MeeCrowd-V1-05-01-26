@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MeeCrowd — Draft 2: Unified Compose</title>
+  <link rel="stylesheet" href="_shared.css">
+  <style>
+    .section { padding: 16px 20px 0; }
+    .label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #6a6a75;
+      margin-bottom: 10px;
+    }
+
+    /* Media carousel */
+    .media-row {
+      display: flex;
+      gap: 10px;
+      padding: 16px 20px 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .media-row::-webkit-scrollbar { display: none; }
+    .media-item {
+      width: 130px;
+      height: 170px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.04);
+      border: 1.5px dashed rgba(255,255,255,0.1);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      color: #55555d;
+      position: relative;
+      overflow: hidden;
+    }
+    .media-item.filled {
+      border: none;
+      background-size: cover;
+      background-position: center;
+    }
+    .media-item .cover-badge {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(10px);
+      color: white;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      padding: 4px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+    }
+    .media-item .x {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 22px;
+      height: 22px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 13px;
+    }
+
+    /* Caption */
+    .caption-wrap {
+      padding: 4px 20px 16px;
+    }
+    .caption-input {
+      font-size: 17px;
+      line-height: 1.5;
+      color: #edeef2;
+      padding: 12px 0;
+      min-height: 80px;
+    }
+    .caption-input .ghost { color: #55555d; }
+    .caption-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: #6a6a75;
+      margin-top: 4px;
+    }
+
+    /* Inline chip row for metadata */
+    .meta-chips {
+      padding: 0 20px 4px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .meta-chip {
+      background: rgba(255,255,255,0.05);
+      border-radius: 999px;
+      padding: 8px 12px 8px 10px;
+      font-size: 13px;
+      color: #c8c8cf;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .meta-chip .icon { font-size: 14px; }
+    .meta-chip.filled {
+      background: rgba(160,100,255,0.15);
+      color: #e6d9ff;
+    }
+
+    /* Expanded schedule panel */
+    .sched-panel {
+      margin: 14px 20px 0;
+      background: rgba(160,100,255,0.08);
+      border: 1px solid rgba(160,100,255,0.25);
+      border-radius: 16px;
+      padding: 14px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .sp-field {
+      background: rgba(0,0,0,0.3);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .sp-field .k {
+      font-size: 10px;
+      font-weight: 700;
+      color: #8a7aaa;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .sp-field .v {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      margin-top: 2px;
+    }
+
+    /* Destination tiles */
+    .dest-row {
+      display: flex;
+      gap: 10px;
+      padding: 14px 20px 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .dest-row::-webkit-scrollbar { display: none; }
+    .dest {
+      width: 74px;
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.04);
+      border: 1.5px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      padding: 10px 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      position: relative;
+    }
+    .dest img {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+      filter: grayscale(1) brightness(0.5);
+    }
+    .dest span {
+      font-size: 10.5px;
+      color: #8a8a95;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .dest.on {
+      background: rgba(160,100,255,0.08);
+      border-color: rgba(160,100,255,0.5);
+    }
+    .dest.on img { filter: none; }
+    .dest.on span { color: #e6d9ff; }
+    .dest.locked {
+      background: rgba(160,100,255,0.12);
+      border-color: rgba(160,100,255,0.8);
+      box-shadow: 0 0 0 3px rgba(160,100,255,0.12);
+    }
+    .dest.locked img { filter: none; }
+    .dest.locked span { color: #e6d9ff; }
+    .dest .badge {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 20px;
+      height: 20px;
+      background: #a066ff;
+      border-radius: 50%;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 900;
+      border: 2px solid #0a0a0f;
+    }
+    .dest .badge.lock { background: #c8a8ff; color: #2a1a50; font-size: 10px; }
+
+    .dest-summary {
+      padding: 10px 20px 0;
+      font-size: 12px;
+      color: #8a8a95;
+      font-weight: 500;
+      line-height: 1.5;
+    }
+    .dest-summary strong { color: #c8a8ff; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="caption">Draft 2 — <strong>Unified Compose</strong> · Instagram-familiar, media-first</div>
+
+  <div class="iphone">
+    <div class="screen">
+      <div class="status-bar"><span>9:41</span><span>●●●●●</span></div>
+
+      <div class="app-header">
+        <div class="icon-btn">✕</div>
+        <div class="app-title">New post</div>
+        <div class="text-btn">Share</div>
+      </div>
+
+      <div class="body">
+        <div class="media-row">
+          <div class="media-item filled" style="background-image:url('https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400');">
+            <span class="cover-badge">Cover</span>
+            <span class="x">✕</span>
+          </div>
+          <div class="media-item filled" style="background-image:url('https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=400');">
+            <span class="x">✕</span>
+          </div>
+          <div class="media-item filled" style="background-image:url('https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=400');">
+            <span class="x">✕</span>
+          </div>
+          <div class="media-item">+</div>
+        </div>
+
+        <div class="caption-wrap">
+          <div class="caption-input">
+            Backstage before the Austin show tonight 🎸<br>
+            <span class="ghost">Add more — tag people, venue, what people should expect…</span>
+          </div>
+          <div class="caption-meta">
+            <span>Auto-translated to 3 platforms</span>
+            <span>187</span>
+          </div>
+        </div>
+
+        <div class="meta-chips">
+          <span class="meta-chip filled"><span class="icon">📅</span>Tonight · 9:00 PM</span>
+          <span class="meta-chip filled"><span class="icon">🎵</span>Music</span>
+          <span class="meta-chip filled"><span class="icon">📍</span>Stubb's, Austin TX</span>
+          <span class="meta-chip"><span class="icon">＋</span>Tag people</span>
+        </div>
+
+        <div class="section" style="padding-top: 20px;">
+          <div class="label">Share to</div>
+        </div>
+        <div class="dest-row">
+          <div class="dest locked">
+            <img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/MeeCrowdLogoW.png">
+            <span>MeeCrowd</span>
+            <span class="badge lock">🔒</span>
+          </div>
+          <div class="dest on">
+            <img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/InstagramLogo.png">
+            <span>Instagram</span>
+            <span class="badge">✓</span>
+          </div>
+          <div class="dest on">
+            <img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/TikTokLogo.png">
+            <span>TikTok</span>
+            <span class="badge">✓</span>
+          </div>
+          <div class="dest on">
+            <img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/XLogo.png">
+            <span>X</span>
+            <span class="badge">✓</span>
+          </div>
+          <div class="dest">
+            <img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/YouTubeLogo.png">
+            <span>YouTube</span>
+          </div>
+          <div class="dest">
+            <img src="https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/FacebookLogo.png">
+            <span>Facebook</span>
+          </div>
+        </div>
+
+        <div class="dest-summary">
+          Sharing to <strong>4 platforms</strong>. Each gets an optimized version — IG goes square, X trims to 280, TikTok becomes vertical.
+        </div>
+
+        <div style="height: 40px"></div>
+      </div>
+
+      <div class="cta-bar">
+        <button class="cta">Share to 4 platforms</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

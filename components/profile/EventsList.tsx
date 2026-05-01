@@ -1,7 +1,8 @@
-import React, { useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import { PostCard } from '@/components/feed/PostCard';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { PostListSkeleton } from '@/components/ui/Skeleton';
 import { colors, spacing, typography } from '@/theme';
 import { getEventStatus } from '@/types';
 import type { Post, EventStatus } from '@/types';
@@ -21,7 +22,7 @@ interface EventsListProps {
 
 export function EventsList({ posts, isLoading, emptyMessage = 'No events yet' }: EventsListProps) {
   if (isLoading) {
-    return <ActivityIndicator color={colors.primary} style={styles.loader} />;
+    return <PostListSkeleton count={3} />;
   }
 
   if (posts.length === 0) {

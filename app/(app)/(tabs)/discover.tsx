@@ -6,7 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -17,6 +17,10 @@ import { postsService } from '@/services/posts';
 import { Avatar } from '@/components/ui/Avatar';
 import { PostCard } from '@/components/feed/PostCard';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { PostListSkeleton, UserRowSkeleton } from '@/components/ui/Skeleton';
+import { useDebounce } from '@/hooks/useDebounce';
+import { usePostActions } from '@/hooks/usePostActions';
 import { colors, spacing, radius, typography } from '@/theme';
 import type { User, Post } from '@/types';
 
@@ -25,27 +29,40 @@ export default function DiscoverScreen() {
   const [mode, setMode] = useState<'users' | 'posts'>('users');
   const router = useRouter();
 
-  const searchQuery = query.trim();
+  // Debounce: fire the actual query 300ms after the user stops typing.
+  // Without this, every keystroke spawned a network request — on top of a
+  // 2-char minimum that meant 3+ redundant searches for even short terms.
+  const debouncedQuery = useDebounce(query.trim(), 300);
+  const { toggleLike, toggleBookmark } = usePostActions();
 
   const users = useQuery({
-    queryKey: ['search-users', searchQuery],
-    queryFn: () => usersService.searchUsers(searchQuery),
-    enabled: searchQuery.length >= 2 && mode === 'users',
+    queryKey: ['search-users', debouncedQuery],
+    queryFn: () => usersService.searchUsers(debouncedQuery),
+    enabled: debouncedQuery.length >= 2 && mode === 'users',
   });
 
   const posts = useQuery({
-    queryKey: ['search-posts', searchQuery],
-    queryFn: () => postsService.searchPosts(searchQuery),
-    enabled: searchQuery.length >= 2 && mode === 'posts',
+    queryKey: ['search-posts', debouncedQuery],
+    queryFn: () => postsService.searchPosts(debouncedQuery),
+    enabled: debouncedQuery.length >= 2 && mode === 'posts',
   });
 
-  const isSearching = searchQuery.length >= 2;
-  const loading = mode === 'users' ? users.isLoading : posts.isLoading;
+  const hasMinChars = debouncedQuery.length >= 2;
+  // While the user is still typing (query != debouncedQuery), show skeleton
+  // so the UI doesn't feel frozen. Otherwise defer to the query's own state.
+  const pendingDebounce = query.trim() !== debouncedQuery && query.trim().length >= 2;
+  const loading = mode === 'users'
+    ? users.isLoading || pendingDebounce
+    : posts.isLoading || pendingDebounce;
+  const hasError = mode === 'users' ? users.isError : posts.isError;
+  const retry = mode === 'users' ? users.refetch : posts.refetch;
 
   const renderUser = useCallback(({ item }: { item: User }) => (
     <TouchableOpacity
       style={styles.userRow}
       onPress={() => router.push(`/(app)/user/${item.id}`)}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${item.display_name}'s profile`}
     >
       <Avatar uri={item.avatar_url} name={item.display_name} size={44} />
       <View style={styles.userInfo}>
@@ -57,8 +74,12 @@ export default function DiscoverScreen() {
   ), [router]);
 
   const renderPost = useCallback(({ item }: { item: Post }) => (
-    <PostCard post={item} />
-  ), []);
+    <PostCard
+      post={item}
+      onLike={() => toggleLike(item)}
+      onBookmark={() => toggleBookmark(item)}
+    />
+  ), [toggleLike, toggleBookmark]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -73,11 +94,17 @@ export default function DiscoverScreen() {
           onChangeText={setQuery}
           autoCapitalize="none"
           returnKeyType="search"
+          accessibilityLabel="Search creators or posts"
         />
         {query.length > 0 && (
-          <TouchableOpacity onPress={() => setQuery('')}>
+          <Pressable
+            onPress={() => setQuery('')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Clear search"
+          >
             <Ionicons name="close-circle" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
+          </Pressable>
         )}
       </View>
 
@@ -86,6 +113,8 @@ export default function DiscoverScreen() {
         <TouchableOpacity
           style={[styles.modeBtn, mode === 'users' && styles.modeBtnActive]}
           onPress={() => setMode('users')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: mode === 'users' }}
         >
           <Text style={[styles.modeText, mode === 'users' && styles.modeTextActive]}>
             Creators
@@ -94,6 +123,8 @@ export default function DiscoverScreen() {
         <TouchableOpacity
           style={[styles.modeBtn, mode === 'posts' && styles.modeBtnActive]}
           onPress={() => setMode('posts')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: mode === 'posts' }}
         >
           <Text style={[styles.modeText, mode === 'posts' && styles.modeTextActive]}>
             Posts
@@ -102,14 +133,24 @@ export default function DiscoverScreen() {
       </View>
 
       {/* Results */}
-      {!isSearching ? (
+      {!hasMinChars ? (
         <EmptyState
           icon="search"
           title="Discover"
-          message="Search for creators or posts"
+          message="Type at least 2 characters to search creators or posts"
         />
+      ) : hasError ? (
+        <ErrorState onRetry={retry} />
       ) : loading ? (
-        <ActivityIndicator color={colors.primary} style={styles.loader} />
+        mode === 'users' ? (
+          <View style={styles.list}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <UserRowSkeleton key={i} />
+            ))}
+          </View>
+        ) : (
+          <PostListSkeleton count={5} />
+        )
       ) : mode === 'users' ? (
         <FlatList
           data={users.data ?? []}

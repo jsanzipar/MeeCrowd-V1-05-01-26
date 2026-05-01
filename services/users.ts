@@ -2,6 +2,16 @@ import { supabase } from '@/lib/supabase';
 import { platformsService } from '@/services/platforms';
 import type { User, CrowdStats } from '@/types';
 
+/**
+ * Sanitize a user-supplied search term before embedding into a PostgREST
+ * `.or()` / `.ilike` filter. Strips wildcards, filter separators, and
+ * quoting characters that could otherwise break the filter grammar or
+ * enable injection. Caps length to a reasonable ceiling.
+ */
+function sanitizeSearchTerm(q: string): string {
+  return q.replace(/[%_,()"'`\\*]/g, '').trim().slice(0, 80);
+}
+
 export const usersService = {
   async getProfile(userId: string): Promise<User> {
     const { data, error } = await supabase
@@ -74,10 +84,13 @@ export const usersService = {
   },
 
   async searchUsers(query: string): Promise<User[]> {
+    const q = sanitizeSearchTerm(query);
+    if (!q) return [];
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .or(`username.ilike.%${query}%,display_name.ilike.%${query}%`)
+      .or(`username.ilike.%${q}%,display_name.ilike.%${q}%`)
+      .is('deleted_at', null)
       .limit(20);
     if (error) throw error;
     return data ?? [];

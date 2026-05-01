@@ -1,0 +1,51 @@
+# .easignore — files not uploaded to EAS Build servers
+# (Complements .gitignore — EAS uploads the repo even if .gitignore'd, unless listed here)
+
+# Local dev artifacts
+.expo/
+.expo-shared/
+
+# Native build output (Expo regenerates these)
+ios/build/
+android/build/
+android/app/build/
+android/.gradle/
+
+# Supabase local dev
+supabase/.branches/
+supabase/.temp/
+supabase/migrations/*.backup.sql
+supabase/seed_*.mjs
+supabase/seed_*.sh
+
+# Pitch / marketing assets — not needed at build time
+PitchDeck/
+UI/
+*.psd
+*.pptx
+*.pdf
+*.ai
+
+# Credentials / secrets (defense in depth — should already be gitignored)
+*.env
+.env.*
+secrets/
+*.p8
+*.p12
+*.keystore
+*.jks
+
+# Generated artifacts
+*.ipa
+*.aab
+*.apk
+coverage/
+.nyc_output/
+
+# Misc dev files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db

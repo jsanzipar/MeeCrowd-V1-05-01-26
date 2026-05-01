@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/stores/authStore';
 import { colors, spacing, typography } from '@/theme';
 
-const LOGO_URL = 'https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos/MeeCrowdLogoW.png';
+const LOGO = require('@/assets/images/logo-w.png');
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -47,7 +47,7 @@ export default function LoginScreen() {
         >
           {/* Logo */}
           <View style={styles.logoArea}>
-            <Image source={{ uri: LOGO_URL }} style={styles.logo} resizeMode="contain" />
+            <Image source={LOGO} style={styles.logo} resizeMode="contain" />
             <Text style={styles.tagline}>Your crowd, one place</Text>
           </View>
 
@@ -70,6 +70,12 @@ export default function LoginScreen() {
               value={password}
               onChangeText={setPassword}
             />
+
+            <View style={styles.forgotRow}>
+              <Link href="/(auth)/forgot-password" style={styles.forgotLink}>
+                Forgot password?
+              </Link>
+            </View>
 
             <Button
               title="Sign In"
@@ -113,9 +119,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   tagline: {
-    ...typography.body,
-    color: colors.textMuted,
+    fontSize: 17,
+    fontWeight: '500',
+    lineHeight: 24,
+    color: colors.textSecondary,
     marginTop: spacing.xs,
+    letterSpacing: -0.2,
   },
   form: {
     width: '100%',
@@ -134,6 +143,16 @@ const styles = StyleSheet.create({
   },
   link: {
     ...typography.bodyBold,
+    color: colors.primary,
+  },
+  forgotRow: {
+    alignItems: 'flex-end',
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  forgotLink: {
+    ...typography.caption,
+    fontWeight: '600',
     color: colors.primary,
   },
 });
