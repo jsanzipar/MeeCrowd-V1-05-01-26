@@ -53,8 +53,12 @@ export default function FeedScreen() {
   // Only fetch live streams while on Trending and not searching — keeps
   // the Upcoming tab and the search results focused.
   const liveQuery = useLiveNow();
+  // Cap visible live cards to keep the Trending feed from being dominated
+  // by auto-discovered streams. We still ingest the full trending list
+  // (~50 streams) so users browsing /aggregation see them all.
+  const LIVE_CAP_IN_TRENDING = 25;
   const liveData = !isSearching && activeTab === 'trending'
-    ? (liveQuery.data ?? [])
+    ? (liveQuery.data ?? []).slice(0, LIVE_CAP_IN_TRENDING)
     : [];
   const { toggleLike, toggleBookmark } = usePostActions();
 
@@ -266,18 +270,7 @@ export default function FeedScreen() {
         />
       )}
 
-      {/* Floating Action Button — New post */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Create new post"
-        onPress={() => router.push('/(app)/post/create')}
-        style={({ pressed }) => [
-          styles.fab,
-          pressed && { transform: [{ scale: 0.94 }], opacity: 0.9 },
-        ]}
-      >
-        <Ionicons name="add" size={28} color={colors.white} />
-      </Pressable>
+      {/* Create post is now the "+" tab in the bottom bar — no FAB. */}
     </SafeAreaView>
   );
 }
@@ -339,9 +332,8 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingTop: spacing.sm,
-    // 120 clears the tab bar (~80) plus the FAB (56 + bottom spacing.xl offset)
-    // so the final card never sits under the plus button.
-    paddingBottom: 120,
+    // Clears the tab bar (~80px) so the last card isn't hidden behind it.
+    paddingBottom: spacing.xl + 64,
     flexGrow: 1,
   },
   footer: {
@@ -349,21 +341,5 @@ const styles = StyleSheet.create({
   },
   center: {
     marginTop: spacing['5xl'],
-  },
-  fab: {
-    position: 'absolute',
-    right: spacing.lg,
-    bottom: spacing.xl + 64, // above the tab bar
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 8,
   },
 });

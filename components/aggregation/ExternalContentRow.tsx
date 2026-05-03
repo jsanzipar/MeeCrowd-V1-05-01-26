@@ -15,7 +15,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { FallbackImage } from '@/components/ui/FallbackImage';
 import { EventTag } from '@/components/feed/EventTag';
 import { PlatformBadge } from '@/components/feed/PlatformBadge';
-import { formatCount, formatDuration } from '@/lib/format';
+import { formatCount, formatDuration, stripEmojis } from '@/lib/format';
 import { colors, spacing, radius, typography } from '@/theme';
 import type { ExternalContent, Platform, EventStatus } from '@/types';
 
@@ -73,7 +73,7 @@ export function ExternalContentRow({ content }: Props) {
 
         <View style={styles.compactCenter}>
           <Text style={styles.title} numberOfLines={1}>
-            {content.title ?? 'Untitled'}
+            {stripEmojis(content.title) || 'Untitled'}
           </Text>
           <View style={styles.metaRow}>
             <Text style={styles.username} numberOfLines={1}>
@@ -111,17 +111,8 @@ export function ExternalContentRow({ content }: Props) {
         <Text style={styles.statText}>{formatCount(m?.like_count ?? 0)}</Text>
         <Ionicons name="chatbubble-outline" size={12} color={colors.textMuted} />
         <Text style={styles.statText}>{formatCount(m?.comment_count ?? 0)}</Text>
-        <Ionicons
-          name="eye-outline"
-          size={12}
-          color={content.is_live ? colors.error : colors.textMuted}
-        />
-        <Text
-          style={[
-            styles.statText,
-            content.is_live && { color: colors.error, fontWeight: '700' },
-          ]}
-        >
+        <Ionicons name="eye-outline" size={12} color={colors.textMuted} />
+        <Text style={styles.statText}>
           {formatCount(
             content.is_live
               ? m?.current_viewer_count ?? 0

@@ -19,3 +19,21 @@ export function formatDuration(seconds: number | null | undefined): string {
   if (h) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
+
+/**
+ * Strip emoji-like pictographs from a string. Used on YouTube/Twitch live
+ * titles which are often peppered with 🔴, 🚨, ✅, etc., that don't
+ * render at the same baseline as the surrounding text and add visual noise
+ * in the compact card layout.
+ *
+ * Uses Unicode property `\p{Extended_Pictographic}` (covers every emoji-like
+ * codepoint) plus the variation selector and zero-width joiner that often
+ * accompany them. Collapses any whitespace runs left behind.
+ */
+export function stripEmojis(text: string | null | undefined): string {
+  if (!text) return '';
+  return text
+    .replace(/[\p{Extended_Pictographic}\u{200D}\u{FE0F}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}

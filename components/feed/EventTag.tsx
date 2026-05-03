@@ -4,32 +4,30 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/theme';
 import type { EventStatus } from '@/types';
 
-const STATUS_CONFIG: Record<EventStatus, {
-  fg: string;
-  icon: keyof typeof Ionicons.glyphMap;
-}> = {
-  live: { fg: colors.error, icon: 'radio' },
-  upcoming: { fg: colors.primary, icon: 'time-outline' },
-  past: { fg: colors.textMuted, icon: 'checkmark-circle-outline' },
-  recurring: { fg: colors.success, icon: 'repeat' },
-};
-
+/**
+ * Compact status indicator. `live` renders as a small red dot (matching
+ * the live-stream visual language used everywhere else); the other
+ * statuses keep their Ionicons.
+ */
 export function EventTag({ status }: { status: EventStatus }) {
-  const config = STATUS_CONFIG[status];
-  return (
-    <Ionicons name={config.icon} size={14} color={config.fg} />
-  );
+  if (status === 'live') {
+    return <View style={styles.liveDot} accessibilityLabel="Live now" />;
+  }
+
+  const config = {
+    upcoming: { fg: colors.primary, icon: 'time-outline' as const },
+    past: { fg: colors.textMuted, icon: 'checkmark-circle-outline' as const },
+    recurring: { fg: colors.success, icon: 'repeat' as const },
+  }[status];
+
+  return <Ionicons name={config.icon} size={14} color={config.fg} />;
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
   liveDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.error,
   },
 });

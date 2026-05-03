@@ -4,7 +4,7 @@
     {
       "name": "Expo Web",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "cd /d C:\\MeeCrowdApp && npx expo start --web --port 8081"],
+      "runtimeArgs": ["/c", "cd /d C:\\MeeCrowdApp && npx expo start --web --port 8081 -c"],
       "port": 8081
     }
   ]

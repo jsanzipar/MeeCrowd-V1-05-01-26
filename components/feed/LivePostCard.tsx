@@ -22,7 +22,7 @@ import { FallbackImage } from '@/components/ui/FallbackImage';
 import { EventTag } from '@/components/feed/EventTag';
 import { PlatformBadge } from '@/components/feed/PlatformBadge';
 import { EmbedPlayer } from '@/components/aggregation/EmbedPlayer';
-import { formatCount } from '@/lib/format';
+import { formatCount, stripEmojis } from '@/lib/format';
 import { colors, spacing, radius, typography } from '@/theme';
 import type { ExternalLiveNowRow, Platform } from '@/types';
 
@@ -66,52 +66,77 @@ export function LivePostCard({ row }: Props) {
   };
 
   return (
-    <TouchableOpacity
-      style={styles.card}
-      activeOpacity={0.7}
-      onPress={toggleExpand}
-      accessibilityRole="button"
-      accessibilityLabel={`Live: ${row.title ?? 'Stream'} by ${row.channel_name}. Tap to ${expanded ? 'collapse' : 'play'}.`}
-    >
-      {/* Compact row — same shape as PostCard */}
-      <View style={styles.compactRow}>
-        <TouchableOpacity onPress={openChannelProfile} hitSlop={8}>
-          <Avatar
-            uri={row.channel_avatar}
-            name={row.channel_name ?? '?'}
-            size={32}
-          />
-        </TouchableOpacity>
+    <View style={styles.card}>
+      {/* Compact row — only this is tappable. Tapping it toggles expand;
+          taps on the player (when expanded) DO NOT bubble here. */}
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={toggleExpand}
+        accessibilityRole="button"
+        accessibilityLabel={`Live: ${row.title ?? 'Stream'} by ${row.channel_name}. Tap to ${expanded ? 'collapse' : 'play'}.`}
+      >
+        <View style={styles.compactRow}>
+          <TouchableOpacity onPress={openChannelProfile} hitSlop={8}>
+            <Avatar
+              uri={row.channel_avatar}
+              name={row.channel_name ?? '?'}
+              size={32}
+            />
+          </TouchableOpacity>
 
-        <View style={styles.compactCenter}>
-          <View style={styles.titleRow}>
-            <Text style={styles.title} numberOfLines={expanded ? undefined : 1}>
-              {row.title ?? 'Untitled stream'}
-            </Text>
-          </View>
-          <View style={styles.metaRow}>
-            <Text style={styles.username} numberOfLines={1}>
-              {row.channel_name ?? row.handle ?? 'Unknown'}
-            </Text>
-            <Text style={styles.timeText}>{timeSince(row.started_at)}</Text>
+          {/* Two-row content area: top = text + thumbnail, bottom = stats + icons.
+              The bottom row makes the icons (live dot, platform badge) align
+              horizontally with the like/comment/view counts. */}
+          <View style={styles.contentColumn}>
+            <View style={styles.topRow}>
+              <View style={styles.textBlock}>
+                <Text style={styles.title} numberOfLines={expanded ? undefined : 1}>
+                  {stripEmojis(row.title) || 'Untitled stream'}
+                </Text>
+                <View style={styles.metaRow}>
+                  <Text style={styles.username} numberOfLines={1}>
+                    {row.channel_name ?? row.handle ?? 'Unknown'}
+                  </Text>
+                  <Text style={styles.timeText}>{timeSince(row.started_at)}</Text>
+                </View>
+              </View>
+              {!expanded && (
+                row.thumbnail_url ? (
+                  <FallbackImage
+                    uri={row.thumbnail_url}
+                    style={styles.thumb}
+                    fallbackIconSize={16}
+                  />
+                ) : (
+                  <View style={styles.thumb} />
+                )
+              )}
+            </View>
+
+            {!expanded && (
+              <View style={styles.bottomRow}>
+                <View style={styles.statsRow}>
+                  <Ionicons name="heart-outline" size={12} color={colors.textMuted} />
+                  <Text style={styles.statText}>{formatCount(row.like_count ?? 0)}</Text>
+                  <Ionicons name="chatbubble-outline" size={12} color={colors.textMuted} />
+                  <Text style={styles.statText}>{formatCount(row.comment_count ?? 0)}</Text>
+                  <Ionicons name="eye-outline" size={12} color={colors.textMuted} />
+                  <Text style={styles.statText}>
+                    {formatCount(row.current_viewer_count ?? row.view_count ?? 0)}
+                  </Text>
+                </View>
+                <View style={styles.iconsBlock}>
+                  <EventTag status="live" />
+                  <PlatformBadge platform={platform} size={14} />
+                </View>
+              </View>
+            )}
           </View>
         </View>
+      </TouchableOpacity>
 
-        {!expanded && row.thumbnail_url && (
-          <FallbackImage
-            uri={row.thumbnail_url}
-            style={styles.compactThumb}
-            fallbackIconSize={18}
-          />
-        )}
-
-        <View style={styles.rightColumn}>
-          <EventTag status="live" />
-          <PlatformBadge platform={platform} size={14} />
-        </View>
-      </View>
-
-      {/* Expanded — autoplay player */}
+      {/* Expanded — player + actions live OUTSIDE the tappable wrapper so
+          tapping play/pause on the YouTube player doesn't collapse the post. */}
       {expanded && row.embed_url && (
         <View style={styles.expandedArea}>
           <EmbedPlayer embedUrl={row.embed_url} autoplay />
@@ -147,26 +172,24 @@ export function LivePostCard({ row }: Props) {
               <Ionicons name="open-outline" size={16} color={colors.textMuted} />
               <Text style={styles.actionText}>Open</Text>
             </TouchableOpacity>
+
+            {/* Explicit collapse handle — needed because the player area
+                no longer toggles expand on tap. */}
+            <TouchableOpacity
+              style={styles.action}
+              onPress={toggleExpand}
+              accessibilityRole="button"
+              accessibilityLabel="Collapse"
+            >
+              <Ionicons name="chevron-up" size={16} color={colors.textMuted} />
+              <Text style={styles.actionText}>Close</Text>
+            </TouchableOpacity>
           </View>
         </View>
       )}
 
-      {/* Compact stats — heart / chat / eye, matches PostCard exactly */}
-      {!expanded && (
-        <View style={styles.compactStats}>
-          <Ionicons name="heart-outline" size={12} color={colors.textMuted} />
-          <Text style={styles.statText}>{formatCount(row.like_count ?? 0)}</Text>
-          <Ionicons name="chatbubble-outline" size={12} color={colors.textMuted} />
-          <Text style={styles.statText}>{formatCount(row.comment_count ?? 0)}</Text>
-          <Ionicons name="eye-outline" size={12} color={colors.error} />
-          <Text style={[styles.statText, { color: colors.error, fontWeight: '700' }]}>
-            {formatCount(row.current_viewer_count ?? row.view_count ?? 0)}
-          </Text>
-        </View>
-      )}
-
       <View style={styles.separator} />
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -175,25 +198,31 @@ const styles = StyleSheet.create({
   card: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   compactRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: spacing.sm,
   },
-  compactCenter: {
+  contentColumn: {
     flex: 1,
     minWidth: 0,
+    gap: 6,
   },
-  titleRow: {
+  topRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  textBlock: {
+    flex: 1,
+    minWidth: 0,
   },
   title: {
     ...typography.bodyBold,
     color: colors.text,
     fontSize: 14,
-    flex: 1,
   },
   metaRow: {
     flexDirection: 'row',
@@ -210,15 +239,32 @@ const styles = StyleSheet.create({
     ...typography.small,
     color: colors.textSecondary,
   },
-  rightColumn: {
+  thumb: {
+    // 16:9, sits at the top-right of the card.
+    width: 80,
+    height: 45,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  statsRow: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  compactThumb: {
-    width: 64,
-    height: 64,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface,
+  iconsBlock: {
+    // Match the thumbnail's 80px width and center the icons within it
+    // so the live dot + platform badge sit visually under the snapshot.
+    width: 80,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
   expandedArea: {
     paddingTop: spacing.md,
@@ -242,14 +288,6 @@ const styles = StyleSheet.create({
   },
   actionSpacer: {
     flex: 1,
-  },
-  compactStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginLeft: 40,
-    marginTop: 4,
-    paddingBottom: spacing.sm,
   },
   statText: {
     ...typography.small,

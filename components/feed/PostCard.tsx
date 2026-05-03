@@ -11,6 +11,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { FallbackImage } from '@/components/ui/FallbackImage';
 import { PlatformBadge } from '@/components/feed/PlatformBadge';
 import { EventTag } from '@/components/feed/EventTag';
+import { stripEmojis } from '@/lib/format';
 import { getEventStatus, formatEventTime } from '@/types';
 import type { Post } from '@/types';
 
@@ -63,32 +64,60 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
           <Avatar uri={post.user?.avatar_url ?? null} name={post.user?.display_name} size={32} />
         </TouchableOpacity>
 
-        <View style={styles.compactCenter}>
-          <View style={styles.titleRow}>
-            <Text style={styles.title} numberOfLines={expanded ? undefined : 1}>{post.title}</Text>
-          </View>
-          <View style={styles.metaRow}>
-            <Text style={styles.username} numberOfLines={1}>
-              {post.user?.display_name ?? 'Unknown'}
-            </Text>
-            <Text style={styles.timeText}>{timeLabel}</Text>
-          </View>
-        </View>
-
-        {!expanded && firstMedia && (
-          <View>
-            <FallbackImage uri={firstMedia} style={styles.compactThumb} fallbackIconSize={18} />
-            {extraMediaCount > 0 && (
-              <View style={styles.compactThumbBadge}>
-                <Text style={styles.compactThumbBadgeText}>+{extraMediaCount}</Text>
+        {/* Two-row content area: top = title+meta+thumbnail, bottom = stats+icons.
+            The bottom row keeps the EventTag + PlatformBadge horizontally
+            aligned with the like/comment/view counts. */}
+        <View style={styles.contentColumn}>
+          <View style={styles.topRow}>
+            <View style={styles.textBlock}>
+              <Text style={styles.title} numberOfLines={expanded ? undefined : 1}>{stripEmojis(post.title)}</Text>
+              <View style={styles.metaRow}>
+                <Text style={styles.username} numberOfLines={1}>
+                  {post.user?.display_name ?? 'Unknown'}
+                </Text>
+                <Text style={styles.timeText}>{timeLabel}</Text>
               </View>
+            </View>
+
+            {!expanded && (
+              firstMedia ? (
+                <View>
+                  <FallbackImage uri={firstMedia} style={styles.thumb} fallbackIconSize={16} />
+                  {extraMediaCount > 0 && (
+                    <View style={styles.compactThumbBadge}>
+                      <Text style={styles.compactThumbBadgeText}>+{extraMediaCount}</Text>
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <View style={styles.thumb} />
+              )
             )}
           </View>
-        )}
 
-        <View style={styles.rightColumn}>
-          <EventTag status={eventStatus} />
-          <PlatformBadge platform={post.platform} size={14} />
+          {!expanded && (
+            <View style={styles.bottomRow}>
+              <View style={styles.statsRow}>
+                <Ionicons
+                  name={post.is_liked ? 'heart' : 'heart-outline'}
+                  size={12}
+                  color={post.is_liked ? colors.error : colors.textMuted}
+                />
+                <Text style={styles.statText}>{formatCount(post.like_count)}</Text>
+                <Ionicons name="chatbubble-outline" size={12} color={colors.textMuted} />
+                <Text style={styles.statText}>{formatCount(post.comment_count)}</Text>
+                <Ionicons name="eye-outline" size={12} color={colors.textMuted} />
+                <Text style={styles.statText}>{formatCount(post.view_count)}</Text>
+                {post.is_bookmarked && (
+                  <Ionicons name="bookmark" size={12} color={colors.primary} />
+                )}
+              </View>
+              <View style={styles.iconsBlock}>
+                <EventTag status={eventStatus} />
+                <PlatformBadge platform={post.platform} size={14} />
+              </View>
+            </View>
+          )}
         </View>
       </View>
 
@@ -154,25 +183,6 @@ export function PostCard({ post, onLike, onBookmark }: PostCardProps) {
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      )}
-
-      {/* Compact stats — only when collapsed */}
-      {!expanded && (
-        <View style={styles.compactStats}>
-          <Ionicons
-            name={post.is_liked ? 'heart' : 'heart-outline'}
-            size={12}
-            color={post.is_liked ? colors.error : colors.textMuted}
-          />
-          <Text style={styles.statText}>{formatCount(post.like_count)}</Text>
-          <Ionicons name="chatbubble-outline" size={12} color={colors.textMuted} />
-          <Text style={styles.statText}>{formatCount(post.comment_count)}</Text>
-          <Ionicons name="eye-outline" size={12} color={colors.textMuted} />
-          <Text style={styles.statText}>{formatCount(post.view_count)}</Text>
-          {post.is_bookmarked && (
-            <Ionicons name="bookmark" size={12} color={colors.primary} style={{ marginLeft: 'auto' }} />
-          )}
         </View>
       )}
 
@@ -245,25 +255,31 @@ const styles = StyleSheet.create({
   card: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   compactRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: spacing.sm,
   },
-  compactCenter: {
+  contentColumn: {
     flex: 1,
     minWidth: 0,
+    gap: 6,
   },
-  titleRow: {
+  topRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  textBlock: {
+    flex: 1,
+    minWidth: 0,
   },
   title: {
     ...typography.bodyBold,
     color: colors.text,
     fontSize: 14,
-    flex: 1,
   },
   metaRow: {
     flexDirection: 'row',
@@ -280,15 +296,32 @@ const styles = StyleSheet.create({
     ...typography.small,
     color: colors.textSecondary,
   },
-  rightColumn: {
+  thumb: {
+    // 16:9, sits at the top-right of the card.
+    width: 80,
+    height: 45,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  statsRow: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  compactThumb: {
-    width: 64,
-    height: 64,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface,
+  iconsBlock: {
+    // Match the thumbnail's 80px width and center the icons within it
+    // so the EventTag + platform badge sit visually under the snapshot.
+    width: 80,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
   compactThumbBadge: {
     position: 'absolute',
@@ -334,13 +367,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.3,
-  },
-  compactStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: spacing.xs,
-    paddingLeft: 40,
   },
   statText: {
     ...typography.small,

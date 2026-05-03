@@ -1,0 +1,15 @@
+# Supabase CLI project config — minimal, only used for `supabase functions deploy`.
+# project_id is the slug used by `supabase link --project-ref <project_id>`.
+project_id = "nfreggighhtvznvcofql"
+
+[functions.discover-live-youtube]
+# JWT verification disabled because:
+#   1. The new sb_secret_/sb_publishable_ key format is not a JWT, so the
+#      built-in verifier rejects the cron job's auth header.
+#   2. The function takes ZERO user input — it only reads its YouTube API
+#      key from a service-role-only table, hits the YouTube API, and writes
+#      to fixed tables. Worst case for an unauth caller is triggering one
+#      extra discovery cycle (cheap).
+# If we later need to lock it down again, switch to a shared secret check
+# inside the function body using Deno.env.get('DISCOVER_SHARED_SECRET').
+verify_jwt = false
