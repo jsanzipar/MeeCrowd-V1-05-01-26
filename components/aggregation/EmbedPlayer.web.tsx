@@ -24,21 +24,16 @@ function withAutoplay(url: string): string {
     const host = u.hostname;
     if (host.includes('youtube.com') || host.includes('youtu.be')) {
       u.searchParams.set('autoplay', '1');
-      u.searchParams.set('mute', '1');
       u.searchParams.set('playsinline', '1');
-    } else if (host.includes('twitch.tv')) {
+    } else if (host.includes('twitch.tv') || host.includes('kick.com')) {
       u.searchParams.set('autoplay', 'true');
-      u.searchParams.set('muted', 'true');
-    } else if (host.includes('kick.com')) {
-      u.searchParams.set('autoplay', 'true');
-      u.searchParams.set('muted', 'true');
     } else {
       u.searchParams.set('autoplay', '1');
     }
     return u.toString();
   } catch {
     const sep = url.includes('?') ? '&' : '?';
-    return `${url}${sep}autoplay=1&mute=1`;
+    return `${url}${sep}autoplay=1`;
   }
 }
 

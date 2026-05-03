@@ -52,21 +52,16 @@ function withAutoplay(url: string): string {
     const host = u.hostname;
     if (host.includes('youtube.com') || host.includes('youtu.be')) {
       u.searchParams.set('autoplay', '1');
-      u.searchParams.set('mute', '1');
       u.searchParams.set('playsinline', '1');
-    } else if (host.includes('twitch.tv')) {
+    } else if (host.includes('twitch.tv') || host.includes('kick.com')) {
       u.searchParams.set('autoplay', 'true');
-      u.searchParams.set('muted', 'true');
-    } else if (host.includes('kick.com')) {
-      u.searchParams.set('autoplay', 'true');
-      u.searchParams.set('muted', 'true');
     } else {
       u.searchParams.set('autoplay', '1');
     }
     return u.toString();
   } catch {
     const sep = url.includes('?') ? '&' : '?';
-    return `${url}${sep}autoplay=1&mute=1`;
+    return `${url}${sep}autoplay=1`;
   }
 }
 
@@ -134,10 +129,11 @@ export function EmbedPlayer({ embedUrl, aspectRatio = 16 / 9, autoplay = false }
 }
 
 /**
- * YouTube subcomponent. Starts with play=false, flips to play=true after
- * the onReady callback fires — this is the canonical workaround for the
- * react-native-youtube-iframe issue where `play` set true on initial mount
- * is sometimes ignored before the player has finished initializing.
+ * YouTube subcomponent. Mute/play dance is required for two reasons:
+ *   1) Autoplay must start muted on iOS/Android — unmuted autoplay is blocked.
+ *   2) After play has started, the tap that mounted us still counts as a
+ *      fresh user activation, so flipping `mute=false` post-onReady is
+ *      allowed and gives the user audible playback without an extra tap.
  */
 function YouTubeBlock({
   videoId,
@@ -149,11 +145,17 @@ function YouTubeBlock({
   autoplay: boolean;
 }) {
   const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(autoplay); // start muted iff we're autoplaying
   const width = Dimensions.get('window').width;
   const height = Math.round(width / aspectRatio);
 
   const onReady = useCallback(() => {
-    if (autoplay) setPlaying(true);
+    if (!autoplay) return;
+    setPlaying(true);
+    // Brief delay lets autoplay actually start before we change mute state,
+    // otherwise the player can race and never start playback at all.
+    const t = setTimeout(() => setMuted(false), 600);
+    return () => clearTimeout(t);
   }, [autoplay]);
 
   const onChangeState = useCallback((state: string) => {
@@ -169,7 +171,7 @@ function YouTubeBlock({
       width={width}
       videoId={videoId}
       play={playing}
-      mute={autoplay} /* iOS/Android require muted for autoplay */
+      mute={muted}
       onReady={onReady}
       onChangeState={onChangeState}
       webViewProps={{

@@ -2,6 +2,15 @@
 # project_id is the slug used by `supabase link --project-ref <project_id>`.
 project_id = "nfreggighhtvznvcofql"
 
+[functions.refresh-live-metrics]
+verify_jwt = false
+
+[functions.discover-live-kick]
+# Same reasoning as discover-live-youtube: read-only, no user input,
+# safe to call without JWT verification. The function authenticates
+# itself to Kick using stored OAuth client credentials.
+verify_jwt = false
+
 [functions.discover-live-youtube]
 # JWT verification disabled because:
 #   1. The new sb_secret_/sb_publishable_ key format is not a JWT, so the

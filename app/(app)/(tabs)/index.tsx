@@ -26,7 +26,24 @@ import { useLiveNow } from '@/hooks/useAggregation';
 import { useFeedStore } from '@/stores/feedStore';
 import { usePostActions } from '@/hooks/usePostActions';
 import { colors, spacing, radius, typography } from '@/theme';
-import type { Post, ExternalLiveNowRow } from '@/types';
+import type { Post, ExternalLiveNowRow, SortFilter } from '@/types';
+
+// Filters that name a platform. Live data is filtered to streams matching
+// any selected external platform; if only `meecrowd` is selected (no
+// external platforms), live streams are hidden because the meecrowd
+// platform has no external live content.
+const PLATFORM_FILTERS = [
+  'meecrowd', 'youtube', 'twitch', 'kick',
+  'instagram', 'tiktok', 'x', 'facebook', 'linkedin',
+] as const;
+
+// Filters that don't have a clean mapping onto external live data
+// (categories, "following", "broadcasters", country/location). When any
+// of these is active, hide live streams rather than show irrelevant ones.
+const LIVE_SUPPRESSING_FILTERS: SortFilter[] = [
+  'following', 'broadcasters', 'near-me', 'location',
+  'gaming', 'music', 'sports', 'education', 'entertainment',
+];
 
 // Discriminated union so the same FlatList can render both regular posts
 // and ingested live streams without coercing one into the other.
@@ -57,9 +74,31 @@ export default function FeedScreen() {
   // by auto-discovered streams. We still ingest the full trending list
   // (~50 streams) so users browsing /aggregation see them all.
   const LIVE_CAP_IN_TRENDING = 25;
-  const liveData = !isSearching && activeTab === 'trending'
-    ? (liveQuery.data ?? []).slice(0, LIVE_CAP_IN_TRENDING)
-    : [];
+
+  // Apply the same filter logic to live streams that the server applies to
+  // posts. Without this, picking 'kick' would filter posts but leave every
+  // YouTube + Twitch + Kick stream visible at the top.
+  const liveData = React.useMemo<ExternalLiveNowRow[]>(() => {
+    if (isSearching || activeTab !== 'trending') return [];
+    // Any filter that doesn't map cleanly onto external live data → hide.
+    if (activeFilters.some((f) => LIVE_SUPPRESSING_FILTERS.includes(f))) return [];
+
+    const platformsSelected = activeFilters.filter(
+      (f): f is typeof PLATFORM_FILTERS[number] => PLATFORM_FILTERS.includes(f as any),
+    );
+    const externalPlatformsSelected = platformsSelected.filter((p) => p !== 'meecrowd');
+
+    // User picked only `meecrowd` → no external live to show.
+    if (platformsSelected.length > 0 && externalPlatformsSelected.length === 0) return [];
+
+    let live = liveQuery.data ?? [];
+    if (externalPlatformsSelected.length > 0) {
+      live = live.filter((row) =>
+        externalPlatformsSelected.includes(row.platform_slug as any),
+      );
+    }
+    return live.slice(0, LIVE_CAP_IN_TRENDING);
+  }, [liveQuery.data, activeFilters, isSearching, activeTab]);
   const { toggleLike, toggleBookmark } = usePostActions();
 
   // Build the unified feed list. Live streams pin to the top of Trending,
