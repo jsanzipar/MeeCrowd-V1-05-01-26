@@ -7,15 +7,23 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from '@tanstack/react-query';
 import { useMyPlatformAccounts } from '@/hooks/usePlatforms';
+import { useMyCreatorConnections, useDisconnectCreator, useSyncCreatorContent } from '@/hooks/useCreator';
+import { useAuthStore } from '@/stores/authStore';
 import { platformsService } from '@/services/platforms';
+import { buildOAuthStartUrl } from '@/services/creator';
 import { queryClient } from '@/lib/queryClient';
 import { Avatar } from '@/components/ui/Avatar';
 import { colors, spacing, radius, typography } from '@/theme';
 import type { Platform, PlatformAccount } from '@/types';
+
+// Platforms where the OAuth-based creator sync is wired up. Other platforms
+// fall back to the older "stats only" placeholder flow.
+const OAUTH_CREATOR_PLATFORMS: Platform[] = ['youtube', 'kick'];
 
 const platformConfig: Record<Platform, {
   label: string;
@@ -38,6 +46,11 @@ function formatCount(n: number): string {
 
 export default function PlatformsScreen() {
   const { data: accounts, isLoading } = useMyPlatformAccounts();
+  const { data: creatorConnections } = useMyCreatorConnections();
+  const { session } = useAuthStore();
+  const userId = session?.user?.id;
+  const disconnectCreator = useDisconnectCreator();
+  const syncCreator = useSyncCreatorContent();
 
   const disconnectMutation = useMutation({
     mutationFn: platformsService.disconnectAccount,
@@ -52,31 +65,55 @@ export default function PlatformsScreen() {
     connectedMap.set(account.platform, account);
   }
 
+  // Lookup table for the OAuth-based creator sync state. Wins over
+  // platform_accounts when both are present, since it has fresher metadata
+  // (handle/avatar pulled from the OAuth response).
+  const creatorMap = new Map<string, NonNullable<typeof creatorConnections>[number]>();
+  for (const conn of creatorConnections ?? []) {
+    creatorMap.set(conn.platform_slug, conn);
+  }
+
   const handleConnect = (platform: Platform) => {
-    // TODO: Launch OAuth flow for the specific platform
-    // This will open the platform's OAuth consent screen, get a code,
-    // exchange it for tokens via a Supabase Edge Function, then call
-    // platformsService.connectAccount() with the tokens.
+    // For platforms we have OAuth wired for, launch the server-side flow.
+    // Everything else still shows the legacy placeholder until we add it.
+    if (OAUTH_CREATOR_PLATFORMS.includes(platform) && userId) {
+      const url = buildOAuthStartUrl(platform as 'youtube' | 'kick', userId);
+      Linking.openURL(url).catch(() => {
+        Alert.alert('Could not open browser', 'Please try again.');
+      });
+      return;
+    }
     Alert.alert(
       `Connect ${platformConfig[platform].label}`,
-      `OAuth integration for ${platformConfig[platform].label} will be set up with an Edge Function.\n\nThis will:\n1. Open the ${platformConfig[platform].label} login\n2. Ask for permission to read your stats\n3. Sync your followers, views, likes, etc.`,
-      [{ text: 'OK' }]
+      `OAuth integration for ${platformConfig[platform].label} is coming soon.`,
+      [{ text: 'OK' }],
     );
   };
 
   const handleDisconnect = (platform: Platform) => {
+    const isCreatorConnection = creatorMap.has(platform);
     Alert.alert(
       `Disconnect ${platformConfig[platform].label}?`,
-      'Your stats from this platform will be removed.',
+      isCreatorConnection
+        ? 'Your synced videos will stay visible on your profile but new uploads will stop syncing.'
+        : 'Your stats from this platform will be removed.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Disconnect',
           style: 'destructive',
-          onPress: () => disconnectMutation.mutate(platform),
+          onPress: () => {
+            if (isCreatorConnection) disconnectCreator.mutate(platform);
+            else disconnectMutation.mutate(platform);
+          },
         },
-      ]
+      ],
     );
+  };
+
+  const handleResync = (platform: Platform) => {
+    if (!OAUTH_CREATOR_PLATFORMS.includes(platform)) return;
+    syncCreator.mutate(platform as 'youtube' | 'kick');
   };
 
   if (isLoading) {
@@ -101,7 +138,15 @@ export default function PlatformsScreen() {
         renderItem={({ item: platform }) => {
           const cfg = platformConfig[platform];
           const account = connectedMap.get(platform);
-          const isConnected = !!account;
+          const creatorConn = creatorMap.get(platform);
+          // Creator connection wins over the legacy platform_account row,
+          // since it has fresher metadata from the OAuth handshake.
+          const isConnected = !!creatorConn || !!account;
+          const handle =
+            creatorConn?.handle ??
+            creatorConn?.display_name ??
+            account?.platform_username ??
+            null;
 
           return (
             <View style={styles.card}>
@@ -114,9 +159,9 @@ export default function PlatformsScreen() {
                   {isConnected ? (
                     <View style={styles.connectedRow}>
                       <Text style={styles.connectedUser}>
-                        @{account.platform_username}
+                        {handle ? (handle.startsWith('@') ? handle : `@${handle}`) : 'Connected'}
                       </Text>
-                      {account.is_verified && (
+                      {account?.is_verified && (
                         <Ionicons name="checkmark-circle" size={14} color={colors.success} />
                       )}
                     </View>
@@ -126,12 +171,28 @@ export default function PlatformsScreen() {
                 </View>
 
                 {isConnected ? (
-                  <TouchableOpacity
-                    style={styles.disconnectBtn}
-                    onPress={() => handleDisconnect(platform)}
-                  >
-                    <Ionicons name="close-circle" size={22} color={colors.error} />
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    {creatorConn && (
+                      <TouchableOpacity
+                        onPress={() => handleResync(platform)}
+                        disabled={syncCreator.isPending}
+                        accessibilityRole="button"
+                        accessibilityLabel="Re-sync content"
+                      >
+                        {syncCreator.isPending ? (
+                          <ActivityIndicator size="small" color={cfg.color} />
+                        ) : (
+                          <Ionicons name="refresh" size={20} color={cfg.color} />
+                        )}
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      style={styles.disconnectBtn}
+                      onPress={() => handleDisconnect(platform)}
+                    >
+                      <Ionicons name="close-circle" size={22} color={colors.error} />
+                    </TouchableOpacity>
+                  </View>
                 ) : (
                   <TouchableOpacity
                     style={[styles.connectBtn, { borderColor: cfg.color }]}

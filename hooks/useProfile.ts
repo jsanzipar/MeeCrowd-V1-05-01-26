@@ -17,6 +17,15 @@ export function useCrowdStats(userId: string) {
   });
 }
 
+export function useMeecrowdFollowerCount(userId: string) {
+  return useQuery({
+    queryKey: ['meecrowd-follower-count', userId],
+    queryFn: () => usersService.getMeecrowdFollowerCount(userId),
+    enabled: !!userId,
+    staleTime: 30_000,
+  });
+}
+
 export function useIsFollowing(userId: string) {
   return useQuery({
     queryKey: ['is-following', userId],

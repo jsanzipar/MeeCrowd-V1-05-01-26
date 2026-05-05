@@ -1,11 +1,18 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
-import { colors, spacing, typography } from '@/theme';
+import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, radius, typography } from '@/theme';
 import type { CrowdStats, Platform } from '@/types';
 
 const STORAGE_BASE = 'https://nfreggighhtvznvcofql.supabase.co/storage/v1/object/public/assets/logos';
 
-const ALL_PLATFORMS: { key: Platform; logo: string }[] = [
+// Native MeeCrowd entry — always rendered as the leftmost stat regardless
+// of which external platforms the user has connected. Count comes from
+// the meecrowdFollowers prop (counted from the `follows` table by the
+// parent screen).
+const MEECROWD_LOGO = `${STORAGE_BASE}/MeeCrowdLogoW.png`;
+
+const EXTERNAL_PLATFORMS: { key: Platform; logo: string }[] = [
   { key: 'youtube', logo: `${STORAGE_BASE}/YouTubeLogo.png` },
   { key: 'twitch', logo: `${STORAGE_BASE}/TwitchLogo.png` },
   { key: 'kick', logo: `${STORAGE_BASE}/KickLogo.png` },
@@ -24,35 +31,74 @@ function formatStat(n: number): string {
 
 interface CrowdStatsBarProps {
   stats: CrowdStats;
+  /**
+   * MeeCrowd-native follower count (from the `follows` table). Rendered
+   * as the always-visible leftmost stat — this is what's unique to our
+   * platform and is shown for every profile, regardless of external syncs.
+   */
+  meecrowdFollowers: number;
+  /**
+   * External platforms the user has actively synced (creator OAuth). When
+   * omitted, falls back to "any external platform with stats > 0".
+   */
+  connectedPlatforms?: Platform[];
+  /** Tap handler for the magnet icon. When provided, the icon renders. */
+  onSyncMore?: () => void;
 }
 
-export function CrowdStatsBar({ stats }: CrowdStatsBarProps) {
-  // Only show platforms that have a nonzero count
-  const activePlatforms = ALL_PLATFORMS.filter(({ key }) => (stats[key] ?? 0) > 0);
+export function CrowdStatsBar({
+  stats,
+  meecrowdFollowers,
+  connectedPlatforms,
+  onSyncMore,
+}: CrowdStatsBarProps) {
+  // External platforms after MeeCrowd. Two render modes:
+  //   1) connectedPlatforms passed → show those exactly, in canonical order
+  //   2) no list passed → show any platform with stats > 0 (legacy fallback)
+  const visibleExternals = connectedPlatforms
+    ? EXTERNAL_PLATFORMS.filter(({ key }) => connectedPlatforms.includes(key))
+    : EXTERNAL_PLATFORMS.filter(({ key }) => (stats[key] ?? 0) > 0);
+
+  const showMagnet = !!onSyncMore;
 
   return (
     <View style={styles.container}>
-      {/* Platform stats */}
+      {/* Platform stats — MeeCrowd is always the leftmost entry */}
       <View style={styles.platformsRow}>
-        {activePlatforms.length > 0 ? (
-          activePlatforms.map(({ key, logo }) => (
-            <View key={key} style={styles.stat}>
-              <Image source={{ uri: logo }} style={styles.logo} resizeMode="contain" />
-              <Text style={styles.count}>{formatStat(stats[key] ?? 0)}</Text>
-            </View>
-          ))
-        ) : (
-          <Text style={styles.noPlatforms}>No platforms connected</Text>
+        <View style={styles.stat}>
+          <Image source={{ uri: MEECROWD_LOGO }} style={styles.logo} resizeMode="contain" />
+          <Text style={styles.count}>{formatStat(meecrowdFollowers)}</Text>
+        </View>
+
+        {visibleExternals.map(({ key, logo }) => (
+          <View key={key} style={styles.stat}>
+            <Image source={{ uri: logo }} style={styles.logo} resizeMode="contain" />
+            <Text style={styles.count}>{formatStat(stats[key] ?? 0)}</Text>
+          </View>
+        ))}
+
+        {showMagnet && (
+          <TouchableOpacity
+            onPress={onSyncMore}
+            style={styles.magnetBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Connect another platform"
+            hitSlop={8}
+          >
+            <Ionicons name="magnet" size={18} color={colors.primary} />
+          </TouchableOpacity>
         )}
       </View>
 
       {/* Separator */}
       <View style={styles.separator} />
 
-      {/* Total crowd */}
+      {/* MeeCrowd total — native followers + every connected platform's subs */}
       <View style={styles.totalRow}>
-        <Text style={styles.totalLabel}>TOTAL CROWD</Text>
-        <Text style={styles.totalCount}>{formatStat(stats.total)}</Text>
+        <Text style={styles.totalLabel}>MeeCrowd</Text>
+        <Text style={styles.totalCount}>
+          {formatStat((stats.total ?? 0) + meecrowdFollowers)}
+        </Text>
       </View>
     </View>
   );
@@ -66,6 +112,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
+    alignItems: 'center',
     gap: spacing.lg,
     paddingVertical: spacing.sm,
   },
@@ -81,6 +128,17 @@ const styles = StyleSheet.create({
     ...typography.bodyBold,
     color: colors.textSecondary,
     fontSize: 13,
+  },
+  magnetBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    marginLeft: spacing.xs,
   },
   noPlatforms: {
     ...typography.body,
@@ -100,13 +158,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   totalLabel: {
-    ...typography.small,
-    color: colors.primary,
-    fontWeight: '700',
-    letterSpacing: 1,
+    ...typography.bodyBold,
+    color: colors.text, // white per spec
+    letterSpacing: 0.4,
   },
   totalCount: {
     ...typography.h3,
-    color: colors.primary,
+    color: colors.text,
   },
 });

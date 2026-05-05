@@ -48,6 +48,19 @@ export const usersService = {
     return platformsService.getCrowdStats(userId);
   },
 
+  /**
+   * Native MeeCrowd follower count (people who follow this user inside
+   * MeeCrowd). Distinct from external-platform subscriber counts.
+   */
+  async getMeecrowdFollowerCount(userId: string): Promise<number> {
+    const { count, error } = await supabase
+      .from('follows')
+      .select('id', { count: 'exact', head: true })
+      .eq('following_id', userId);
+    if (error) throw error;
+    return count ?? 0;
+  },
+
   async followUser(targetUserId: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');

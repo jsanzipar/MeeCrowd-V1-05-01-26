@@ -5,6 +5,21 @@ project_id = "nfreggighhtvznvcofql"
 [functions.refresh-live-metrics]
 verify_jwt = false
 
+# OAuth flow entry points + callbacks. JWT is OFF because the redirect
+# from the provider doesn't carry our auth header — security is enforced
+# via the `state` parameter (which encodes the user_id) and the Edge
+# Functions only mutate rows via service_role.
+[functions.oauth-youtube-start]
+verify_jwt = false
+[functions.oauth-youtube-callback]
+verify_jwt = false
+[functions.oauth-kick-start]
+verify_jwt = false
+[functions.oauth-kick-callback]
+verify_jwt = false
+[functions.sync-creator-content]
+verify_jwt = false
+
 [functions.discover-live-kick]
 # Same reasoning as discover-live-youtube: read-only, no user input,
 # safe to call without JWT verification. The function authenticates

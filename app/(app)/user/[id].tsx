@@ -17,7 +17,8 @@ import { Button } from '@/components/ui/Button';
 import { CrowdStatsBar } from '@/components/profile/CrowdStatsBar';
 import { EventsList } from '@/components/profile/EventsList';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { useProfile, useCrowdStats, useIsFollowing } from '@/hooks/useProfile';
+import { useProfile, useCrowdStats, useIsFollowing, useMeecrowdFollowerCount } from '@/hooks/useProfile';
+import { useCreatorStats } from '@/hooks/useCreator';
 import { useUserPosts } from '@/hooks/useFeed';
 import { usersService } from '@/services/users';
 import { moderationService } from '@/services/moderation';
@@ -37,8 +38,36 @@ export default function UserProfileScreen() {
   const [reportOpen, setReportOpen] = React.useState(false);
 
   const { data: user, isLoading: userLoading } = useProfile(id!);
-  const { data: stats } = useCrowdStats(id!);
+  const { data: legacyStats } = useCrowdStats(id!);
+  const { data: creatorStats } = useCreatorStats(id!);
+  const { data: meecrowdFollowers } = useMeecrowdFollowerCount(id!);
   const { data: isFollowing } = useIsFollowing(id!);
+
+  // Mirror tabs/profile.tsx: prefer OAuth-synced subscriber counts over
+  // the legacy platform_metrics-based numbers, then sum the total.
+  const stats = React.useMemo(() => {
+    const base: any = legacyStats
+      ? { ...legacyStats }
+      : { youtube: 0, twitch: 0, kick: 0, instagram: 0, tiktok: 0, x: 0, facebook: 0, linkedin: 0, total: 0 };
+    if (creatorStats?.length) {
+      for (const cs of creatorStats) {
+        if (cs.platform_slug in base) base[cs.platform_slug] = cs.subscriber_count;
+      }
+      const keys = ['youtube', 'twitch', 'kick', 'instagram', 'tiktok', 'x', 'facebook', 'linkedin'] as const;
+      base.total = keys.reduce((s, k) => s + (Number(base[k]) || 0), 0);
+    }
+    return base;
+  }, [legacyStats, creatorStats]);
+
+  const connectedPlatforms = React.useMemo(
+    () =>
+      (creatorStats ?? [])
+        .map((s) => s.platform_slug)
+        .filter((slug): slug is any =>
+          ['youtube', 'twitch', 'kick', 'instagram', 'tiktok', 'x', 'facebook', 'linkedin'].includes(slug),
+        ),
+    [creatorStats],
+  );
   const { data: postsData, isLoading: postsLoading } = useUserPosts(id!);
   const { data: isBlocked } = useQuery({
     queryKey: ['is-blocked', id],
@@ -212,7 +241,11 @@ export default function UserProfileScreen() {
         {/* Crowd Stats */}
         {!isBlocked && (
           <View style={styles.statsArea}>
-            <CrowdStatsBar stats={stats ?? defaultStats} />
+            <CrowdStatsBar
+              stats={stats ?? defaultStats}
+              meecrowdFollowers={meecrowdFollowers ?? 0}
+              connectedPlatforms={connectedPlatforms}
+            />
           </View>
         )}
 
