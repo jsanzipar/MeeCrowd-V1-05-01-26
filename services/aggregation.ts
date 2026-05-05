@@ -24,8 +24,13 @@ export const aggregationService = {
   /**
    * Currently-live streams across all platforms, ordered by viewer count.
    * Reads from the external_live_now view.
+   *
+   * The default 300 rows is much larger than the Trending feed actually
+   * shows — but the client needs enough headroom to do per-platform fair
+   * distribution (otherwise smaller platforms like Twitch get squeezed
+   * out by a handful of YouTube/Kick mega-streams).
    */
-  async getLiveNow(limit = 30): Promise<ExternalLiveNowRow[]> {
+  async getLiveNow(limit = 300): Promise<ExternalLiveNowRow[]> {
     const { data, error } = await supabase
       .from('external_live_now')
       .select('*')

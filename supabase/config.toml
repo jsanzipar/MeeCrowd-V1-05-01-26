@@ -17,6 +17,12 @@ verify_jwt = false
 verify_jwt = false
 [functions.oauth-kick-callback]
 verify_jwt = false
+[functions.oauth-twitch-start]
+verify_jwt = false
+[functions.oauth-twitch-callback]
+verify_jwt = false
+[functions.discover-live-twitch]
+verify_jwt = false
 [functions.sync-creator-content]
 verify_jwt = false
 

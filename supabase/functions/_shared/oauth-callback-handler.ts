@@ -24,7 +24,7 @@ interface ProviderConfig {
   needsPkce: boolean;
 }
 
-const CONFIG: Record<'youtube' | 'kick', ProviderConfig> = {
+const CONFIG: Record<'youtube' | 'kick' | 'twitch', ProviderConfig> = {
   youtube: {
     tokenUrl: 'https://oauth2.googleapis.com/token',
     clientIdField: 'oauth_client_id',
@@ -36,6 +36,12 @@ const CONFIG: Record<'youtube' | 'kick', ProviderConfig> = {
     clientIdField: 'client_id',
     clientSecretField: 'client_secret',
     needsPkce: true,
+  },
+  twitch: {
+    tokenUrl: 'https://id.twitch.tv/oauth2/token',
+    clientIdField: 'client_id',
+    clientSecretField: 'client_secret',
+    needsPkce: false,
   },
 };
 
@@ -94,6 +100,44 @@ async function fetchKickChannel(accessToken: string) {
   const ch = chJson.data?.[0];
   if (!ch) return null;
   return { ...ch, user: me };
+}
+
+async function fetchTwitchChannel(accessToken: string, clientId: string) {
+  // /helix/users with no params returns the authenticated user. Twitch
+  // doesn't separate "user" and "channel" — login + display_name + id come
+  // from this single endpoint.
+  const res = await fetch('https://api.twitch.tv/helix/users', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Client-Id': clientId,
+      Accept: 'application/json',
+    },
+  });
+  if (!res.ok) throw new Error(`Twitch /users ${res.status}: ${await res.text()}`);
+  const j = await res.json();
+  const user = j.data?.[0];
+  if (!user) return null;
+
+  // Best-effort follower count (requires a scope we may not have; tolerate 401/403).
+  let follower_count = 0;
+  try {
+    const f = await fetch(
+      `https://api.twitch.tv/helix/channels/followers?broadcaster_id=${user.id}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Client-Id': clientId,
+          Accept: 'application/json',
+        },
+      },
+    );
+    if (f.ok) {
+      const fj = await f.json();
+      follower_count = Number(fj.total ?? 0);
+    }
+  } catch { /* ignore */ }
+
+  return { ...user, follower_count };
 }
 
 function html(body: string, opts: { ok?: boolean } = {}): Response {
@@ -190,6 +234,8 @@ export async function oauthCallbackHandler(req: Request): Promise<Response> {
     const channel =
       platformSlug === 'youtube'
         ? await fetchYoutubeChannel(token.access_token)
+        : platformSlug === 'twitch'
+        ? await fetchTwitchChannel(token.access_token, clientId)
         : await fetchKickChannel(token.access_token);
     if (!channel) throw new Error('Could not load channel info from provider');
 
@@ -247,6 +293,57 @@ export async function oauthCallbackHandler(req: Request): Promise<Response> {
         const { data: inserted, error } = await sb
           .from('external_channels')
           .insert({ ...fields, discovery_source: 'manual' }) // claimed = manual
+          .select('id')
+          .single();
+        if (error) throw error;
+        channelRowId = (inserted as any).id;
+      }
+    } else if (platformSlug === 'twitch') {
+      // Twitch — single /helix/users call returned everything we need.
+      channelMeta = {
+        channel_id: channel.id,
+        handle: channel.login,
+        display_name: channel.display_name,
+        avatar_url: channel.profile_image_url ?? null,
+      };
+
+      const { data: existing } = await sb
+        .from('external_channels')
+        .select('id')
+        .eq('platform_id', platformId)
+        .eq('platform_external_id', channel.id)
+        .maybeSingle();
+
+      const fields = {
+        platform_id: platformId,
+        platform_external_id: channel.id,
+        handle: channel.login,
+        display_name: channel.display_name,
+        avatar_url: channel.profile_image_url ?? null,
+        banner_url: channel.offline_image_url ?? null,
+        description: channel.description ?? null,
+        channel_url: `https://www.twitch.tv/${channel.login}`,
+        country: null,
+        subscriber_count: channel.follower_count ?? 0,
+        total_view_count: channel.view_count != null ? String(channel.view_count) : '0',
+        video_count: 0,
+        user_id: userId,
+        claimed_at: new Date().toISOString(),
+        last_synced_at: new Date().toISOString(),
+        extra_data: { broadcaster_type: channel.broadcaster_type ?? null },
+      };
+
+      if (existing) {
+        const { error } = await sb
+          .from('external_channels')
+          .update(fields)
+          .eq('id', (existing as any).id);
+        if (error) throw error;
+        channelRowId = (existing as any).id;
+      } else {
+        const { data: inserted, error } = await sb
+          .from('external_channels')
+          .insert({ ...fields, discovery_source: 'manual' })
           .select('id')
           .single();
         if (error) throw error;
@@ -344,7 +441,7 @@ export async function oauthCallbackHandler(req: Request): Promise<Response> {
     const display = (channelMeta.handle ?? channelMeta.display_name ?? '').toString();
     const labeled = display.startsWith('@') ? display : `@${display}`;
     return html(
-      `<p>Connected ${platformSlug === 'youtube' ? 'YouTube' : 'Kick'} as <b>${labeled}</b>.</p>
+      `<p>Connected ${platformSlug === 'youtube' ? 'YouTube' : platformSlug === 'twitch' ? 'Twitch' : 'Kick'} as <b>${labeled}</b>.</p>
        <p>We're syncing your back-catalog now — give it a minute and refresh your profile.</p>`,
       { ok: true },
     );

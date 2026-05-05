@@ -37,7 +37,7 @@ interface PlatformRow {
 const PLATFORMS: PlatformRow[] = [
   { key: 'youtube',   label: 'YouTube',   logo: `${STORAGE_BASE}/YouTubeLogo.png`,   oauthReady: true  },
   { key: 'kick',      label: 'Kick',      logo: `${STORAGE_BASE}/KickLogo.png`,      oauthReady: true  },
-  { key: 'twitch',    label: 'Twitch',    logo: `${STORAGE_BASE}/TwitchLogo.png`,    oauthReady: false },
+  { key: 'twitch',    label: 'Twitch',    logo: `${STORAGE_BASE}/TwitchLogo.png`,    oauthReady: true  },
   { key: 'instagram', label: 'Instagram', logo: `${STORAGE_BASE}/InstagramLogo.png`, oauthReady: false },
   { key: 'tiktok',    label: 'TikTok',    logo: `${STORAGE_BASE}/TikTokLogo.png`,    oauthReady: false },
   { key: 'x',         label: 'X',         logo: `${STORAGE_BASE}/XLogo.png`,         oauthReady: false },
@@ -68,7 +68,7 @@ export function SyncPlatformSheet({ visible, onClose, userId, connectedPlatforms
       Alert.alert('Not signed in', 'Sign in before connecting a creator account.');
       return;
     }
-    const url = buildOAuthStartUrl(p.key as 'youtube' | 'kick', userId);
+    const url = buildOAuthStartUrl(p.key as 'youtube' | 'kick' | 'twitch', userId);
     Linking.openURL(url).catch(() => {
       Alert.alert('Could not open browser', 'Please try again.');
     });

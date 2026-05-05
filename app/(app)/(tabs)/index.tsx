@@ -70,10 +70,12 @@ export default function FeedScreen() {
   // Only fetch live streams while on Trending and not searching — keeps
   // the Upcoming tab and the search results focused.
   const liveQuery = useLiveNow();
-  // Cap visible live cards to keep the Trending feed from being dominated
-  // by auto-discovered streams. We still ingest the full trending list
-  // (~50 streams) so users browsing /aggregation see them all.
-  const LIVE_CAP_IN_TRENDING = 25;
+  // Up to 25 cards per platform (75 total with 3 platforms today). Larger
+  // platforms still appear higher because we re-sort the merged list by
+  // viewer count after bucketing. None of this affects API quota — that's
+  // capped server-side in the discover-live-* Edge Functions.
+  const PER_PLATFORM_FAIR_TAKE = 25;
+  const LIVE_CAP_IN_TRENDING = PER_PLATFORM_FAIR_TAKE * 3;
 
   // Apply the same filter logic to live streams that the server applies to
   // posts. Without this, picking 'kick' would filter posts but leave every
@@ -97,7 +99,25 @@ export default function FeedScreen() {
         externalPlatformsSelected.includes(row.platform_slug as any),
       );
     }
-    return live.slice(0, LIVE_CAP_IN_TRENDING);
+
+    // Per-platform fair take: bucket by platform, keep the top N from each,
+    // then re-sort by viewer count and slice to the global cap. This stops
+    // YouTube/Kick mega-streams from squeezing every other platform out.
+    const buckets = new Map<string, ExternalLiveNowRow[]>();
+    for (const row of live) {
+      const slug = row.platform_slug;
+      const bucket = buckets.get(slug) ?? [];
+      if (bucket.length < PER_PLATFORM_FAIR_TAKE) {
+        bucket.push(row);
+        buckets.set(slug, bucket);
+      }
+    }
+    const merged: ExternalLiveNowRow[] = [];
+    for (const b of buckets.values()) merged.push(...b);
+    merged.sort(
+      (a, b) => (b.current_viewer_count ?? 0) - (a.current_viewer_count ?? 0),
+    );
+    return merged.slice(0, LIVE_CAP_IN_TRENDING);
   }, [liveQuery.data, activeFilters, isSearching, activeTab]);
   const { toggleLike, toggleBookmark } = usePostActions();
 

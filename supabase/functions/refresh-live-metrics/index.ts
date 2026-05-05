@@ -29,6 +29,8 @@ import { createClient, SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 const YT = 'https://www.googleapis.com/youtube/v3';
 const KICK_TOKEN_URL = 'https://id.kick.com/oauth/token';
 const KICK_API = 'https://api.kick.com/public/v1';
+const TWITCH_TOKEN_URL = 'https://id.twitch.tv/oauth2/token';
+const TWITCH_API = 'https://api.twitch.tv/helix';
 
 interface LiveRow {
   id: string;
@@ -254,6 +256,104 @@ async function refreshKick(
   return { refreshed, ended, deleted };
 }
 
+async function getTwitchToken(
+  sb: SupabaseClient,
+): Promise<{ token: string; clientId: string }> {
+  const { data, error } = await sb
+    .from('external_platform_credentials')
+    .select('credential_type, value, external_platforms!inner(slug)')
+    .in('credential_type', ['client_id', 'client_secret'])
+    .eq('external_platforms.slug', 'twitch');
+  if (error || !data?.length) throw new Error(`Twitch creds: ${error?.message}`);
+  const map: Record<string, string> = {};
+  for (const r of data as any[]) map[r.credential_type] = r.value;
+
+  const res = await fetch(TWITCH_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: map.client_id,
+      client_secret: map.client_secret,
+      grant_type: 'client_credentials',
+    }),
+  });
+  if (!res.ok) throw new Error(`Twitch token ${res.status}`);
+  const j = await res.json();
+  return { token: j.access_token as string, clientId: map.client_id };
+}
+
+async function refreshTwitch(
+  sb: SupabaseClient,
+  rows: LiveRow[],
+): Promise<{ refreshed: number; ended: number; deleted: number }> {
+  if (!rows.length) return { refreshed: 0, ended: 0, deleted: 0 };
+
+  const { token, clientId } = await getTwitchToken(sb);
+  let refreshed = 0;
+  let ended = 0;
+  let deleted = 0;
+
+  // Pull user_id from extra_data so we can hit /streams?user_id=...
+  const ids = rows.map((r) => r.id);
+  const { data: contentRows } = await sb
+    .from('external_content')
+    .select('id, external_id, extra_data')
+    .in('id', ids);
+  const userIdByContent = new Map<string, string>();
+  for (const r of (contentRows as any[]) ?? []) {
+    const uid = r.extra_data?.user_id;
+    if (uid) userIdByContent.set(r.id, String(uid));
+  }
+
+  // Helix /streams accepts up to 100 user_id params per call. Returns ONLY
+  // currently-live streams; missing IDs = stream ended.
+  const userIds = Array.from(new Set(Array.from(userIdByContent.values())));
+  const liveByUserId = new Map<string, any>();
+  for (let i = 0; i < userIds.length; i += 100) {
+    const batch = userIds.slice(i, i + 100);
+    const url = new URL(`${TWITCH_API}/streams`);
+    for (const id of batch) url.searchParams.append('user_id', id);
+    url.searchParams.set('first', '100');
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Client-Id': clientId,
+        Accept: 'application/json',
+      },
+    });
+    if (!res.ok) {
+      console.error('Twitch /streams failed', res.status);
+      continue;
+    }
+    const json = await res.json();
+    for (const s of (json.data as any[]) ?? []) {
+      liveByUserId.set(String(s.user_id), s);
+    }
+  }
+
+  for (const row of rows) {
+    const uid = userIdByContent.get(row.id);
+    if (!uid) continue; // skip; can't decide without user_id
+    const s = liveByUserId.get(uid);
+    if (s) {
+      await sb.from('external_content_metrics').insert({
+        content_id: row.id,
+        view_count: null,
+        like_count: null,
+        comment_count: null,
+        current_viewer_count: s.viewer_count ?? null,
+        extra_data: { source: 'refresh_live_metrics' },
+      });
+      refreshed++;
+    } else {
+      const action = await endStream(sb, row);
+      if (action.startsWith('deleted')) deleted++;
+      else ended++;
+    }
+  }
+  return { refreshed, ended, deleted };
+}
+
 Deno.serve(async (_req: Request) => {
   const startedAt = Date.now();
   try {
@@ -275,6 +375,7 @@ Deno.serve(async (_req: Request) => {
 
     const youtube: LiveRow[] = [];
     const kick: LiveRow[] = [];
+    const twitch: LiveRow[] = [];
     for (const r of (liveData as any[]) ?? []) {
       const row: LiveRow = {
         id: r.id,
@@ -288,17 +389,20 @@ Deno.serve(async (_req: Request) => {
       const slug = r.channel.platform?.slug;
       if (slug === 'youtube') youtube.push(row);
       else if (slug === 'kick') kick.push(row);
+      else if (slug === 'twitch') twitch.push(row);
     }
 
-    const [yt, kk] = await Promise.all([
+    const [yt, kk, tw] = await Promise.all([
       refreshYoutube(sb, youtube),
       refreshKick(sb, kick),
+      refreshTwitch(sb, twitch),
     ]);
 
     return Response.json({
       ok: true,
       youtube: { ...yt, total: youtube.length },
       kick: { ...kk, total: kick.length },
+      twitch: { ...tw, total: twitch.length },
       duration_ms: Date.now() - startedAt,
     });
   } catch (e: any) {

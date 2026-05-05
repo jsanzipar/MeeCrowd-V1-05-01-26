@@ -268,7 +268,9 @@ const styles = StyleSheet.create({
   },
   expandedArea: {
     paddingTop: spacing.md,
-    paddingLeft: 40,
+    // Player spans the full card width — text-column alignment isn't worth
+    // sacrificing video real estate for, especially on phones where 40px
+    // would clip the player's right-side controls (fullscreen, captions).
   },
   actions: {
     flexDirection: 'row',

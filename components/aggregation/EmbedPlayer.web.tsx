@@ -15,8 +15,12 @@ interface Props {
 }
 
 /**
- * Append autoplay + muted params using each platform's expected names.
- * Browsers block UNMUTED autoplay, so muting is required for true autoplay.
+ * Append autoplay params + (Twitch-only) the runtime hostname as `parent`.
+ *
+ * Twitch's iframe player requires `parent` to match the actual hosting
+ * domain — we hard-coded `meecrowd.com` in the embed URL during ingest,
+ * which fails on localhost during dev. Re-write it at render time using
+ * window.location.hostname so the embed plays anywhere it's loaded.
  */
 function withAutoplay(url: string): string {
   try {
@@ -25,7 +29,15 @@ function withAutoplay(url: string): string {
     if (host.includes('youtube.com') || host.includes('youtu.be')) {
       u.searchParams.set('autoplay', '1');
       u.searchParams.set('playsinline', '1');
-    } else if (host.includes('twitch.tv') || host.includes('kick.com')) {
+    } else if (host.includes('twitch.tv')) {
+      u.searchParams.set('autoplay', 'true');
+      // Override the hard-coded parent with the live hostname.
+      const liveHost = typeof window !== 'undefined' ? window.location.hostname : null;
+      if (liveHost) {
+        u.searchParams.delete('parent');
+        u.searchParams.append('parent', liveHost);
+      }
+    } else if (host.includes('kick.com')) {
       u.searchParams.set('autoplay', 'true');
     } else {
       u.searchParams.set('autoplay', '1');
@@ -37,8 +49,26 @@ function withAutoplay(url: string): string {
   }
 }
 
+/**
+ * Twitch's iframe enforces the `parent` query param matches the actual
+ * hosting hostname. We always rewrite, regardless of autoplay state.
+ */
+function withTwitchParent(url: string): string {
+  if (!url.includes('player.twitch.tv')) return url;
+  if (typeof window === 'undefined') return url;
+  try {
+    const u = new URL(url);
+    u.searchParams.delete('parent');
+    u.searchParams.append('parent', window.location.hostname);
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 export function EmbedPlayer({ embedUrl, aspectRatio = 16 / 9, autoplay = false }: Props) {
-  const url = autoplay ? withAutoplay(embedUrl) : embedUrl;
+  const base = withTwitchParent(embedUrl);
+  const url = autoplay ? withAutoplay(base) : base;
   return (
     <View style={[styles.wrap, { aspectRatio }]}>
       {/* eslint-disable-next-line react/no-unknown-property */}

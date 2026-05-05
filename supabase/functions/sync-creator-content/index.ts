@@ -20,6 +20,7 @@ import { createClient, SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
 const YT = 'https://www.googleapis.com/youtube/v3';
 const KICK_API = 'https://api.kick.com/public/v1';
+const TWITCH_API = 'https://api.twitch.tv/helix';
 
 const VIDEOS_PER_BATCH = 50;
 const COMMENTS_PER_VIDEO = 20;
@@ -441,6 +442,152 @@ async function upsertKickVideo(sb: SupabaseClient, row: OAuthRow, v: any): Promi
   }
 }
 
+/**
+ * Twitch back-catalog: VODs for the user's channel via /helix/videos.
+ * The user's OAuth token authorizes us to query their own user_id; we
+ * also need the Twitch app client_id for the Client-Id header.
+ */
+async function getTwitchClientId(sb: SupabaseClient): Promise<string | null> {
+  const { data } = await sb
+    .from('external_platform_credentials')
+    .select('value, external_platforms!inner(slug)')
+    .eq('external_platforms.slug', 'twitch')
+    .eq('credential_type', 'client_id')
+    .maybeSingle();
+  return (data as any)?.value ?? null;
+}
+
+async function syncTwitch(
+  sb: SupabaseClient,
+  row: OAuthRow,
+): Promise<{ videos: number; comments: number }> {
+  const clientId = await getTwitchClientId(sb);
+  if (!clientId) {
+    console.warn('Twitch client_id missing — skipping VOD sync');
+    return { videos: 0, comments: 0 };
+  }
+  const userId = row.account_meta?.channel_id;
+  if (!userId) {
+    console.warn('No Twitch user_id in OAuth metadata');
+    return { videos: 0, comments: 0 };
+  }
+
+  // Twitch /helix/videos returns up to 100 per page. Paginate via cursor.
+  let cursor: string | undefined;
+  let videosSynced = 0;
+  for (let safety = 0; safety < 20; safety++) {
+    const url = new URL(`${TWITCH_API}/videos`);
+    url.searchParams.set('user_id', userId);
+    url.searchParams.set('first', '100');
+    url.searchParams.set('type', 'archive'); // past VODs (vs highlights/uploads)
+    if (cursor) url.searchParams.set('after', cursor);
+
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${row.access_token}`,
+        'Client-Id': clientId,
+        Accept: 'application/json',
+      },
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(`Twitch /videos ${res.status}: ${t.slice(0, 200)}`);
+    }
+    const j = await res.json();
+    const videos = (j.data as any[]) ?? [];
+    if (!videos.length) break;
+
+    for (const v of videos) {
+      await upsertTwitchVideo(sb, row, v);
+      videosSynced++;
+    }
+    cursor = j.pagination?.cursor;
+    if (!cursor) break;
+    if (videosSynced >= MAX_VIDEOS_PER_RUN) break;
+  }
+  return { videos: videosSynced, comments: 0 };
+}
+
+async function upsertTwitchVideo(sb: SupabaseClient, row: OAuthRow, v: any): Promise<void> {
+  const externalId = String(v.id);
+
+  // Twitch duration is "Xh Ym Zs" — parse to seconds for our schema.
+  const dur = (v.duration as string | undefined) ?? '';
+  let durationSec: number | null = null;
+  const m = dur.match(/(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/);
+  if (m && (m[1] || m[2] || m[3])) {
+    durationSec = Number(m[1] || 0) * 3600 + Number(m[2] || 0) * 60 + Number(m[3] || 0);
+  }
+
+  // Twitch thumbnails come with {width}x{height} placeholders.
+  const thumb = (v.thumbnail_url as string | undefined)?.replace('%{width}', '480').replace('%{height}', '270').replace('{width}', '480').replace('{height}', '270') ?? null;
+
+  // Map Twitch viewability (public/private) onto our visibility column.
+  const visibility: 'public' | 'unlisted' | 'private' =
+    v.viewable === 'private' ? 'private' : 'public';
+
+  const fields = {
+    channel_id: row.channel_id!,
+    platform_id: row.platform_id,
+    external_id: externalId,
+    kind: 'vod' as const,
+    title: v.title ?? null,
+    description: v.description ?? null,
+    url: v.url ?? `https://www.twitch.tv/videos/${externalId}`,
+    embed_url: `https://player.twitch.tv/?video=v${externalId}&parent=meecrowd.com`,
+    thumbnail_url: thumb,
+    duration_seconds: durationSec,
+    is_live: false,
+    language: v.language ?? null,
+    category: null, // Twitch /videos doesn't include game; would need /games extra
+    published_at: v.published_at ?? v.created_at ?? null,
+    scheduled_start_at: null,
+    visibility,
+    extra_data: {
+      type: v.type,
+      stream_id: v.stream_id ?? null,
+      muted_segments: v.muted_segments ?? null,
+    },
+    last_synced_at: new Date().toISOString(),
+  };
+
+  const { data: existing } = await sb
+    .from('external_content')
+    .select('id')
+    .eq('platform_id', row.platform_id)
+    .eq('external_id', externalId)
+    .maybeSingle();
+
+  let contentId: string;
+  if (existing) {
+    const { error } = await sb
+      .from('external_content')
+      .update(fields)
+      .eq('id', (existing as any).id);
+    if (error) throw error;
+    contentId = (existing as any).id;
+  } else {
+    const { data: inserted, error } = await sb
+      .from('external_content')
+      .insert({ ...fields, discovery_source: 'manual' })
+      .select('id')
+      .single();
+    if (error) throw error;
+    contentId = (inserted as any).id;
+  }
+
+  if (v.view_count != null) {
+    await sb.from('external_content_metrics').insert({
+      content_id: contentId,
+      view_count: Number(v.view_count),
+      like_count: null,
+      comment_count: null,
+      current_viewer_count: null,
+      extra_data: { source: 'sync_creator_content' },
+    });
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const startedAt = Date.now();
   try {
@@ -500,6 +647,9 @@ Deno.serve(async (req: Request) => {
           commentsSynced += comments;
         } else if (slug === 'kick') {
           const { videos } = await syncKick(sb, row);
+          videosSynced += videos;
+        } else if (slug === 'twitch') {
+          const { videos } = await syncTwitch(sb, row);
           videosSynced += videos;
         }
       } catch (e: any) {

@@ -108,7 +108,39 @@ export function EmbedPlayer({ embedUrl, aspectRatio = 16 / 9, autoplay = false }
     );
   }
 
-  // Twitch / Kick / fallback → plain WebView with the URL.
+  // Twitch on native → wrap in HTML with a baseUrl matching the parent
+  // param. Twitch's iframe player checks document.referrer / parent
+  // hostname against the `parent` query string; the WebView's default
+  // origin doesn't match anything Twitch trusts, so we serve an HTML
+  // shell with baseUrl='https://meecrowd.com' (which matches the embed
+  // URL's parent value) and put a real iframe inside.
+  if (embedUrl.includes('player.twitch.tv')) {
+    const url = autoplay ? withAutoplay(embedUrl) : embedUrl;
+    const html = `<!doctype html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden}
+iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
+</head><body><iframe src="${url}" allow="autoplay;encrypted-media;picture-in-picture;fullscreen" allowfullscreen></iframe></body></html>`;
+    return (
+      <View style={[styles.wrap, { aspectRatio }]}>
+        <WebView
+          source={{ html, baseUrl: 'https://meecrowd.com' }}
+          originWhitelist={['*']}
+          style={styles.webview}
+          allowsInlineMediaPlayback
+          mediaPlaybackRequiresUserAction={false}
+          javaScriptEnabled
+          domStorageEnabled
+          startInLoadingState
+          sharedCookiesEnabled
+          thirdPartyCookiesEnabled
+          setSupportMultipleWindows={false}
+        />
+      </View>
+    );
+  }
+
+  // Kick / fallback → plain WebView with the URL.
   const url = autoplay ? withAutoplay(embedUrl) : embedUrl;
   return (
     <View style={[styles.wrap, { aspectRatio }]}>
@@ -146,8 +178,14 @@ function YouTubeBlock({
 }) {
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(autoplay); // start muted iff we're autoplaying
-  const width = Dimensions.get('window').width;
-  const height = Math.round(width / aspectRatio);
+  // Measure the actual container width via onLayout so the player matches
+  // its parent — using Dimensions.get('window').width caused the player to
+  // overflow on phones, which clipped the right-side controls (incl. the
+  // fullscreen button).
+  const [containerWidth, setContainerWidth] = useState<number>(
+    Dimensions.get('window').width,
+  );
+  const height = Math.round(containerWidth / aspectRatio);
 
   const onReady = useCallback(() => {
     if (!autoplay) return;
@@ -166,9 +204,16 @@ function YouTubeBlock({
   }, []);
 
   return (
+    <View
+      style={{ width: '100%' }}
+      onLayout={(e) => {
+        const w = Math.round(e.nativeEvent.layout.width);
+        if (w > 0 && w !== containerWidth) setContainerWidth(w);
+      }}
+    >
     <YoutubePlayer
       height={height}
-      width={width}
+      width={containerWidth}
       videoId={videoId}
       play={playing}
       mute={muted}
@@ -184,6 +229,7 @@ function YouTubeBlock({
         rel: false,
       }}
     />
+    </View>
   );
 }
 
