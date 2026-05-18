@@ -38,6 +38,10 @@ verify_jwt = false
 verify_jwt = false
 [functions.refresh-creator-avatars]
 verify_jwt = false
+[functions.oauth-tiktok-start]
+verify_jwt = false
+[functions.oauth-tiktok-callback]
+verify_jwt = false
 [functions.sync-creator-content]
 verify_jwt = false
 

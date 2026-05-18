@@ -46,22 +46,32 @@ export default function ProfileScreen() {
   // over the legacy follower_count whenever both exist for the same
   // platform — it's the freshest signal we have.
   const stats: CrowdStats = React.useMemo(() => {
-    const base: any = legacyStats
-      ? { ...legacyStats }
-      : { youtube: 0, twitch: 0, kick: 0, instagram: 0, tiktok: 0, x: 0, facebook: 0, linkedin: 0, total: 0 };
+    // Always start with a complete shape — the legacy `crowd_stats` view
+    // only returns 4 platforms (youtube/twitch/kick/instagram), so we'd
+    // silently drop counts for newer platforms (tiktok/facebook/...) if
+    // we used its shape as the base.
+    const base: any = {
+      youtube: 0, twitch: 0, kick: 0, instagram: 0,
+      tiktok: 0, x: 0, facebook: 0, linkedin: 0,
+      total: 0,
+    };
+    if (legacyStats) {
+      for (const k of Object.keys(legacyStats)) {
+        const v = (legacyStats as any)[k];
+        if (typeof v === 'number') base[k] = v;
+      }
+    }
     if (creatorStats?.length) {
       for (const cs of creatorStats) {
-        if (cs.platform_slug in base) {
-          base[cs.platform_slug] = cs.subscriber_count;
-        }
+        // creator-OAuth-synced subscriber count is authoritative when present.
+        base[cs.platform_slug] = cs.subscriber_count;
       }
-      // Recompute total from whatever ended up per-platform.
-      const platformKeys: Platform[] = [
-        'youtube', 'twitch', 'kick', 'instagram',
-        'tiktok', 'x', 'facebook', 'linkedin',
-      ];
-      base.total = platformKeys.reduce((s, k) => s + (Number(base[k]) || 0), 0);
     }
+    const platformKeys: Platform[] = [
+      'youtube', 'twitch', 'kick', 'instagram',
+      'tiktok', 'x', 'facebook', 'linkedin',
+    ];
+    base.total = platformKeys.reduce((s, k) => s + (Number(base[k]) || 0), 0);
     return base as CrowdStats;
   }, [legacyStats, creatorStats]);
 

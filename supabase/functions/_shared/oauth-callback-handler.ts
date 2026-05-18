@@ -25,7 +25,7 @@ interface ProviderConfig {
 }
 
 const CONFIG: Record<
-  'youtube' | 'kick' | 'twitch' | 'instagram' | 'facebook',
+  'youtube' | 'kick' | 'twitch' | 'instagram' | 'facebook' | 'tiktok',
   ProviderConfig
 > = {
   youtube: {
@@ -58,6 +58,14 @@ const CONFIG: Record<
     clientIdField: 'oauth_client_id',
     clientSecretField: 'oauth_client_secret',
     needsPkce: false,
+  },
+  tiktok: {
+    // TikTok's token endpoint expects `client_key` (not `client_id`) in the
+    // body — we patch that into the request below in the dispatch logic.
+    tokenUrl: 'https://open.tiktokapis.com/v2/oauth/token/',
+    clientIdField: 'client_id',
+    clientSecretField: 'client_secret',
+    needsPkce: true,
   },
 };
 
@@ -364,6 +372,52 @@ async function fetchFacebookPage(accessToken: string) {
   };
 }
 
+/**
+ * TikTok user info via /v2/user/info/. Returns the authenticated TikTok
+ * account's profile + follower/video counts.
+ */
+async function fetchTikTokUser(accessToken: string) {
+  const fields = [
+    'open_id',
+    'union_id',
+    'avatar_url',
+    'avatar_url_100',
+    'avatar_large_url',
+    'display_name',
+    'bio_description',
+    'profile_deep_link',
+    'is_verified',
+    'username',
+    'follower_count',
+    'following_count',
+    'likes_count',
+    'video_count',
+  ].join(',');
+  const res = await fetch(
+    `https://open.tiktokapis.com/v2/user/info/?fields=${fields}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) throw new Error(`TikTok /user/info ${res.status}: ${await res.text()}`);
+  const json = await res.json();
+  const u = json?.data?.user;
+  if (!u) {
+    throw new Error(`TikTok /user/info returned no user — body: ${JSON.stringify(json).slice(0, 300)}`);
+  }
+  return {
+    id: u.open_id,
+    union_id: u.union_id ?? null,
+    username: u.username ?? null,
+    display_name: u.display_name ?? u.username ?? 'TikTok user',
+    avatar_url: u.avatar_large_url ?? u.avatar_url_100 ?? u.avatar_url ?? null,
+    bio: u.bio_description ?? null,
+    profile_url: u.profile_deep_link ?? null,
+    follower_count: Number(u.follower_count ?? 0),
+    video_count: Number(u.video_count ?? 0),
+    likes_count: Number(u.likes_count ?? 0),
+    is_verified: !!u.is_verified,
+  };
+}
+
 async function fetchTwitchChannel(accessToken: string, clientId: string) {
   // /helix/users with no params returns the authenticated user. Twitch
   // doesn't separate "user" and "channel" — login + display_name + id come
@@ -463,7 +517,10 @@ export async function oauthCallbackHandler(req: Request): Promise<Response> {
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
       code,
-      client_id: clientId,
+      // TikTok's endpoint uses `client_key`; everyone else uses `client_id`.
+      ...(platformSlug === 'tiktok'
+        ? { client_key: clientId }
+        : { client_id: clientId }),
       client_secret: clientSecret,
       redirect_uri: redirectUri,
     });
@@ -502,6 +559,8 @@ export async function oauthCallbackHandler(req: Request): Promise<Response> {
         ? await fetchInstagramAccountNative(token.access_token, clientSecret)
         : platformSlug === 'facebook'
         ? await fetchFacebookPage(token.access_token)
+        : platformSlug === 'tiktok'
+        ? await fetchTikTokUser(token.access_token)
         : await fetchKickChannel(token.access_token);
     if (!channel) throw new Error('Could not load channel info from provider');
 
@@ -672,6 +731,57 @@ export async function oauthCallbackHandler(req: Request): Promise<Response> {
         if (error) throw error;
         channelRowId = (inserted as any).id;
       }
+    } else if (platformSlug === 'tiktok') {
+      channelMeta = {
+        channel_id: channel.id,            // open_id
+        handle: channel.username,
+        display_name: channel.display_name,
+        avatar_url: channel.avatar_url,
+        union_id: channel.union_id,
+      };
+
+      const fields = {
+        platform_id: platformId,
+        platform_external_id: channel.id,
+        handle: channel.username,
+        display_name: channel.display_name,
+        avatar_url: channel.avatar_url,
+        banner_url: null,
+        description: channel.bio,
+        channel_url: channel.profile_url ?? `https://www.tiktok.com/@${channel.username}`,
+        country: null,
+        subscriber_count: channel.follower_count ?? 0,
+        total_view_count: '0',
+        video_count: channel.video_count ?? 0,
+        user_id: userId,
+        claimed_at: new Date().toISOString(),
+        last_synced_at: new Date().toISOString(),
+        verified: channel.is_verified,
+        extra_data: {
+          union_id: channel.union_id,
+          likes_count: channel.likes_count,
+        },
+      };
+
+      const { data: existing } = await sb
+        .from('external_channels')
+        .select('id')
+        .eq('platform_id', platformId)
+        .eq('platform_external_id', channel.id)
+        .maybeSingle();
+      if (existing) {
+        const { error } = await sb.from('external_channels').update(fields).eq('id', (existing as any).id);
+        if (error) throw error;
+        channelRowId = (existing as any).id;
+      } else {
+        const { data: inserted, error } = await sb
+          .from('external_channels')
+          .insert({ ...fields, discovery_source: 'manual' })
+          .select('id')
+          .single();
+        if (error) throw error;
+        channelRowId = (inserted as any).id;
+      }
     } else if (platformSlug === 'twitch') {
       // Twitch — single /helix/users call returned everything we need.
       channelMeta = {
@@ -820,6 +930,7 @@ export async function oauthCallbackHandler(req: Request): Promise<Response> {
         platformSlug === 'twitch'  ? 'Twitch'  :
         platformSlug === 'instagram' ? 'Instagram' :
         platformSlug === 'facebook'  ? 'Facebook'  :
+        platformSlug === 'tiktok' ? 'TikTok' :
         'Kick'
       } as <b>${labeled}</b>.</p>
        <p>We're syncing your back-catalog now — give it a minute and refresh your profile.</p>`,

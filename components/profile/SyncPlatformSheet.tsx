@@ -39,7 +39,7 @@ const PLATFORMS: PlatformRow[] = [
   { key: 'kick',      label: 'Kick',      logo: `${STORAGE_BASE}/KickLogo.png`,      oauthReady: true  },
   { key: 'twitch',    label: 'Twitch',    logo: `${STORAGE_BASE}/TwitchLogo.png`,    oauthReady: true  },
   { key: 'instagram', label: 'Instagram', logo: `${STORAGE_BASE}/InstagramLogo.png`, oauthReady: true  },
-  { key: 'tiktok',    label: 'TikTok',    logo: `${STORAGE_BASE}/TikTokLogo.png`,    oauthReady: false },
+  { key: 'tiktok',    label: 'TikTok',    logo: `${STORAGE_BASE}/TikTokLogo.png`,    oauthReady: true  },
   { key: 'x',         label: 'X',         logo: `${STORAGE_BASE}/XLogo.png`,         oauthReady: false },
   { key: 'facebook',  label: 'Facebook',  logo: `${STORAGE_BASE}/FacebookLogo.png`,  oauthReady: true  },
   { key: 'linkedin',  label: 'LinkedIn',  logo: `${STORAGE_BASE}/LinkedInLogo.png`,  oauthReady: false },
@@ -69,7 +69,7 @@ export function SyncPlatformSheet({ visible, onClose, userId, connectedPlatforms
       return;
     }
     const url = buildOAuthStartUrl(
-      p.key as 'youtube' | 'kick' | 'twitch' | 'instagram' | 'facebook',
+      p.key as 'youtube' | 'kick' | 'twitch' | 'instagram' | 'facebook' | 'tiktok',
       userId,
     );
     Linking.openURL(url).catch(() => {

@@ -46,16 +46,25 @@ export default function UserProfileScreen() {
   // Mirror tabs/profile.tsx: prefer OAuth-synced subscriber counts over
   // the legacy platform_metrics-based numbers, then sum the total.
   const stats = React.useMemo(() => {
-    const base: any = legacyStats
-      ? { ...legacyStats }
-      : { youtube: 0, twitch: 0, kick: 0, instagram: 0, tiktok: 0, x: 0, facebook: 0, linkedin: 0, total: 0 };
-    if (creatorStats?.length) {
-      for (const cs of creatorStats) {
-        if (cs.platform_slug in base) base[cs.platform_slug] = cs.subscriber_count;
+    // Always start with a full platform shape so creator-OAuth-synced
+    // counts (e.g. tiktok, facebook) aren't dropped when the legacy
+    // crowd_stats view doesn't include them.
+    const base: any = {
+      youtube: 0, twitch: 0, kick: 0, instagram: 0,
+      tiktok: 0, x: 0, facebook: 0, linkedin: 0,
+      total: 0,
+    };
+    if (legacyStats) {
+      for (const k of Object.keys(legacyStats)) {
+        const v = (legacyStats as any)[k];
+        if (typeof v === 'number') base[k] = v;
       }
-      const keys = ['youtube', 'twitch', 'kick', 'instagram', 'tiktok', 'x', 'facebook', 'linkedin'] as const;
-      base.total = keys.reduce((s, k) => s + (Number(base[k]) || 0), 0);
     }
+    if (creatorStats?.length) {
+      for (const cs of creatorStats) base[cs.platform_slug] = cs.subscriber_count;
+    }
+    const keys = ['youtube', 'twitch', 'kick', 'instagram', 'tiktok', 'x', 'facebook', 'linkedin'] as const;
+    base.total = keys.reduce((s, k) => s + (Number(base[k]) || 0), 0);
     return base;
   }, [legacyStats, creatorStats]);
 

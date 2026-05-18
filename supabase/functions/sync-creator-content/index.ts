@@ -22,6 +22,7 @@ const YT = 'https://www.googleapis.com/youtube/v3';
 const KICK_API = 'https://api.kick.com/public/v1';
 const TWITCH_API = 'https://api.twitch.tv/helix';
 const META_API = 'https://graph.facebook.com/v19.0';
+const TIKTOK_API = 'https://open.tiktokapis.com/v2';
 
 const VIDEOS_PER_BATCH = 50;
 const COMMENTS_PER_VIDEO = 20;
@@ -828,6 +829,134 @@ async function upsertFacebookPost(sb: SupabaseClient, row: OAuthRow, p: any) {
   });
 }
 
+/**
+ * TikTok back-catalog: short videos via /v2/video/list/ (POST).
+ *
+ * The Display API requires the `video.list` scope (which we requested
+ * in oauth-tiktok-start). It returns up to 20 items per call, with
+ * `has_more` + `cursor` for pagination.
+ */
+async function syncTikTok(
+  sb: SupabaseClient,
+  row: OAuthRow,
+): Promise<{ videos: number; comments: number }> {
+  let cursor: number | undefined;
+  let synced = 0;
+
+  const fields = [
+    'id',
+    'create_time',
+    'cover_image_url',
+    'share_url',
+    'video_description',
+    'duration',
+    'height',
+    'width',
+    'title',
+    'embed_html',
+    'embed_link',
+    'like_count',
+    'comment_count',
+    'share_count',
+    'view_count',
+  ];
+
+  for (let safety = 0; safety < 20; safety++) {
+    const res = await fetch(`${TIKTOK_API}/video/list/?fields=${fields.join(',')}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${row.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        max_count: 20,
+        ...(cursor !== undefined ? { cursor } : {}),
+      }),
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(`TikTok /video/list ${res.status}: ${t.slice(0, 200)}`);
+    }
+    const j = await res.json();
+    const videos = (j?.data?.videos as any[]) ?? [];
+    if (!videos.length) break;
+
+    for (const v of videos) {
+      await upsertTikTokVideo(sb, row, v);
+      synced++;
+    }
+    if (!j.data?.has_more) break;
+    cursor = j.data?.cursor;
+    if (synced >= MAX_VIDEOS_PER_RUN) break;
+  }
+
+  return { videos: synced, comments: 0 };
+}
+
+async function upsertTikTokVideo(sb: SupabaseClient, row: OAuthRow, v: any) {
+  const externalId = String(v.id);
+  const createTimeSec = Number(v.create_time ?? 0); // unix seconds
+  const publishedAt = createTimeSec
+    ? new Date(createTimeSec * 1000).toISOString()
+    : null;
+
+  const fields = {
+    channel_id: row.channel_id!,
+    platform_id: row.platform_id,
+    external_id: externalId,
+    kind: 'short' as const, // TikTok = short-form video
+    title: v.title ?? (v.video_description ? String(v.video_description).slice(0, 200) : null),
+    description: v.video_description ?? null,
+    url: v.share_url ?? null,
+    embed_url: v.embed_link ?? `https://www.tiktok.com/embed/v2/${externalId}`,
+    thumbnail_url: v.cover_image_url ?? null,
+    duration_seconds: v.duration != null ? Number(v.duration) : null,
+    is_live: false,
+    language: null,
+    category: null,
+    published_at: publishedAt,
+    scheduled_start_at: null,
+    visibility: 'public' as const,
+    extra_data: {
+      width: v.width,
+      height: v.height,
+      share_count: v.share_count,
+    },
+    last_synced_at: new Date().toISOString(),
+  };
+
+  const { data: existing } = await sb
+    .from('external_content')
+    .select('id')
+    .eq('platform_id', row.platform_id)
+    .eq('external_id', externalId)
+    .maybeSingle();
+
+  let contentId: string;
+  if (existing) {
+    const { error } = await sb.from('external_content').update(fields).eq('id', (existing as any).id);
+    if (error) throw error;
+    contentId = (existing as any).id;
+  } else {
+    const { data: inserted, error } = await sb
+      .from('external_content')
+      .insert({ ...fields, discovery_source: 'manual' })
+      .select('id')
+      .single();
+    if (error) throw error;
+    contentId = (inserted as any).id;
+  }
+
+  await sb.from('external_content_metrics').insert({
+    content_id: contentId,
+    view_count: v.view_count != null ? Number(v.view_count) : null,
+    like_count: v.like_count != null ? Number(v.like_count) : null,
+    comment_count: v.comment_count != null ? Number(v.comment_count) : null,
+    current_viewer_count: null,
+    extra_data: { source: 'sync_creator_content', share_count: v.share_count },
+  });
+}
+
 Deno.serve(async (req: Request) => {
   const startedAt = Date.now();
   try {
@@ -896,6 +1025,9 @@ Deno.serve(async (req: Request) => {
           videosSynced += videos;
         } else if (slug === 'facebook') {
           const { videos } = await syncFacebook(sb, row);
+          videosSynced += videos;
+        } else if (slug === 'tiktok') {
+          const { videos } = await syncTikTok(sb, row);
           videosSynced += videos;
         }
       } catch (e: any) {

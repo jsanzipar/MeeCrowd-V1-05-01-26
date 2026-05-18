@@ -23,7 +23,7 @@ import type { Platform, PlatformAccount } from '@/types';
 
 // Platforms where the OAuth-based creator sync is wired up. Other platforms
 // fall back to the older "stats only" placeholder flow.
-const OAUTH_CREATOR_PLATFORMS: Platform[] = ['youtube', 'kick', 'twitch', 'instagram', 'facebook'];
+const OAUTH_CREATOR_PLATFORMS: Platform[] = ['youtube', 'kick', 'twitch', 'instagram', 'facebook', 'tiktok'];
 
 const platformConfig: Record<Platform, {
   label: string;
@@ -77,7 +77,7 @@ export default function PlatformsScreen() {
     // For platforms we have OAuth wired for, launch the server-side flow.
     // Everything else still shows the legacy placeholder until we add it.
     if (OAUTH_CREATOR_PLATFORMS.includes(platform) && userId) {
-      const url = buildOAuthStartUrl(platform as 'youtube' | 'kick' | 'twitch' | 'instagram' | 'facebook', userId);
+      const url = buildOAuthStartUrl(platform as 'youtube' | 'kick' | 'twitch' | 'instagram' | 'facebook' | 'tiktok', userId);
       Linking.openURL(url).catch(() => {
         Alert.alert('Could not open browser', 'Please try again.');
       });
@@ -113,7 +113,7 @@ export default function PlatformsScreen() {
 
   const handleResync = (platform: Platform) => {
     if (!OAUTH_CREATOR_PLATFORMS.includes(platform)) return;
-    syncCreator.mutate(platform as 'youtube' | 'kick' | 'twitch' | 'instagram' | 'facebook');
+    syncCreator.mutate(platform as 'youtube' | 'kick' | 'twitch' | 'instagram' | 'facebook' | 'tiktok');
   };
 
   if (isLoading) {
