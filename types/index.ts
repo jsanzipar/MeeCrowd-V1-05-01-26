@@ -1,6 +1,25 @@
 export type Platform = 'meecrowd' | 'youtube' | 'twitch' | 'kick' | 'instagram' | 'tiktok' | 'x' | 'facebook' | 'linkedin';
 
-export type FeedTab = 'upcoming' | 'trending';
+export type FeedTab = 'upcoming' | 'trending' | 'latest';
+
+/** A row from the `latest_feed` SQL view (cross-user mixed content). */
+export interface LatestFeedRow {
+  source: 'post' | 'external';
+  id: string;
+  owner_user_id: string;
+  title: string | null;
+  description: string | null;
+  created_at: string;
+  starts_at: string | null;
+  thumbnail_url: string | null;
+  platform_slug: string;
+  kind: string;
+  is_recurring: boolean;
+  embed_url: string | null;
+  channel_id: string | null;
+  channel_handle: string | null;
+  channel_avatar: string | null;
+}
 
 export type SortFilter =
   | 'following'

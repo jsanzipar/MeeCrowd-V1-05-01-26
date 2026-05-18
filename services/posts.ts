@@ -1,5 +1,13 @@
 import { supabase } from '@/lib/supabase';
-import type { Post, Comment, FeedTab, SortFilter, Platform, ContentType } from '@/types';
+import type {
+  Post,
+  Comment,
+  FeedTab,
+  SortFilter,
+  Platform,
+  ContentType,
+  LatestFeedRow,
+} from '@/types';
 
 const POST_SELECT = `
   *,
@@ -133,6 +141,34 @@ export const postsService = {
     }
 
     return enrichPosts(results);
+  },
+
+  /**
+   * Latest tab feed — paginated chronological mix of native MeeCrowd
+   * posts and non-live external content (synced creators + manually
+   * ingested channels). Reads from the latest_feed SQL view which does
+   * the UNION ALL on the server.
+   */
+  async getLatestFeed(
+    page = 0,
+    limit = 20,
+    filters: SortFilter[] = [],
+  ): Promise<LatestFeedRow[]> {
+    let q = supabase
+      .from('latest_feed')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(page * limit, (page + 1) * limit - 1);
+
+    // Platform filter — same pattern as getFeed.
+    const platformFilters = filters.filter((f) => PLATFORM_FILTERS.includes(f));
+    if (platformFilters.length > 0) {
+      q = q.in('platform_slug', platformFilters);
+    }
+
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data ?? []) as LatestFeedRow[];
   },
 
   async getPost(postId: string): Promise<Post> {

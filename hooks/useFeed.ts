@@ -12,6 +12,17 @@ export function useFeed(tab: FeedTab, filters: SortFilter[] = []) {
   });
 }
 
+export function useLatestFeed(filters: SortFilter[] = []) {
+  return useInfiniteQuery({
+    queryKey: ['latest-feed', ...filters],
+    queryFn: ({ pageParam = 0 }) =>
+      postsService.getLatestFeed(pageParam, 20, filters),
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === 20 ? allPages.length : undefined,
+    initialPageParam: 0,
+  });
+}
+
 export function useUserPosts(userId: string) {
   return useInfiniteQuery({
     queryKey: ['user-posts', userId],

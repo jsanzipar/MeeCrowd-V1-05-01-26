@@ -13,7 +13,7 @@ export function useMyCreatorConnections() {
 
 export function useSyncCreatorContent() {
   return useMutation({
-    mutationFn: (platform: 'youtube' | 'kick' | 'twitch') => creatorService.syncContent(platform),
+    mutationFn: (platform: 'youtube' | 'kick' | 'twitch' | 'instagram' | 'facebook') => creatorService.syncContent(platform),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profile-feed'] });
       queryClient.invalidateQueries({ queryKey: ['user-posts'] });

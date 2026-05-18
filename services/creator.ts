@@ -36,7 +36,7 @@ export interface CreatorConnection {
  *
  * `state` is generated server-side; the app doesn't need to know it.
  */
-export function buildOAuthStartUrl(platform: 'youtube' | 'kick' | 'twitch', userId: string): string {
+export function buildOAuthStartUrl(platform: 'youtube' | 'kick' | 'twitch' | 'instagram' | 'facebook', userId: string): string {
   const url = new URL(`${FUNCTIONS_BASE}/oauth-${platform}-start`);
   url.searchParams.set('user_id', userId);
   return url.toString();
@@ -97,7 +97,7 @@ export const creatorService = {
    * Idempotent — calls the sync-creator-content function, which upserts.
    * Resolves with whatever the function returns (counts of imported items).
    */
-  async syncContent(platform: 'youtube' | 'kick' | 'twitch'): Promise<{
+  async syncContent(platform: 'youtube' | 'kick' | 'twitch' | 'instagram' | 'facebook'): Promise<{
     ok: boolean;
     videos_synced?: number;
     duration_ms?: number;

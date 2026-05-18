@@ -23,6 +23,21 @@ verify_jwt = false
 verify_jwt = false
 [functions.discover-live-twitch]
 verify_jwt = false
+[functions.oauth-instagram-start]
+verify_jwt = false
+[functions.oauth-instagram-callback]
+verify_jwt = false
+[functions.oauth-facebook-start]
+verify_jwt = false
+[functions.oauth-facebook-callback]
+verify_jwt = false
+
+# Static privacy policy page. Public, no auth — Meta needs to load it
+# during App Review and end users need to see it from the OAuth screen.
+[functions.privacy]
+verify_jwt = false
+[functions.refresh-creator-avatars]
+verify_jwt = false
 [functions.sync-creator-content]
 verify_jwt = false
 

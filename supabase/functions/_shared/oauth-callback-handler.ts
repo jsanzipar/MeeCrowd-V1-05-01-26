@@ -24,7 +24,10 @@ interface ProviderConfig {
   needsPkce: boolean;
 }
 
-const CONFIG: Record<'youtube' | 'kick' | 'twitch', ProviderConfig> = {
+const CONFIG: Record<
+  'youtube' | 'kick' | 'twitch' | 'instagram' | 'facebook',
+  ProviderConfig
+> = {
   youtube: {
     tokenUrl: 'https://oauth2.googleapis.com/token',
     clientIdField: 'oauth_client_id',
@@ -41,6 +44,19 @@ const CONFIG: Record<'youtube' | 'kick' | 'twitch', ProviderConfig> = {
     tokenUrl: 'https://id.twitch.tv/oauth2/token',
     clientIdField: 'client_id',
     clientSecretField: 'client_secret',
+    needsPkce: false,
+  },
+  instagram: {
+    // Instagram-native OAuth uses api.instagram.com, not graph.facebook.com.
+    tokenUrl: 'https://api.instagram.com/oauth/access_token',
+    clientIdField: 'oauth_client_id',
+    clientSecretField: 'oauth_client_secret',
+    needsPkce: false,
+  },
+  facebook: {
+    tokenUrl: 'https://graph.facebook.com/v19.0/oauth/access_token',
+    clientIdField: 'oauth_client_id',
+    clientSecretField: 'oauth_client_secret',
     needsPkce: false,
   },
 };
@@ -100,6 +116,252 @@ async function fetchKickChannel(accessToken: string) {
   const ch = chJson.data?.[0];
   if (!ch) return null;
   return { ...ch, user: me };
+}
+
+/**
+ * Instagram-native flow (Instagram API with Instagram Login).
+ *
+ * The short-lived access_token from /oauth/access_token expires in 1h.
+ * We immediately exchange it for a long-lived (~60 day) token via
+ * graph.instagram.com, then read /me to identify the account.
+ *
+ * Returns: id, username, display_name, avatar (note: avatar is not
+ * provided by the IG Login API — we leave it null and let the app
+ * render the fallback initial), and the long-lived token.
+ */
+async function fetchInstagramAccountNative(
+  shortLivedToken: string,
+  clientSecret: string,
+): Promise<{
+  id: string;
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+  media_count: number;
+  long_lived_token: string;
+  long_lived_expires_in: number;
+} | null> {
+  // 1) Exchange short-lived → long-lived token (60 days)
+  const exchangeUrl = new URL('https://graph.instagram.com/access_token');
+  exchangeUrl.searchParams.set('grant_type', 'ig_exchange_token');
+  exchangeUrl.searchParams.set('client_secret', clientSecret);
+  exchangeUrl.searchParams.set('access_token', shortLivedToken);
+  const xRes = await fetch(exchangeUrl);
+  if (!xRes.ok) throw new Error(`IG exchange ${xRes.status}: ${await xRes.text()}`);
+  const xJson = await xRes.json();
+  const longToken: string = xJson.access_token;
+  const expiresIn: number = Number(xJson.expires_in ?? 0);
+
+  // 2) Identify the IG account — request all the fields we can render
+  //    on the profile: full name, avatar, follower count, post count.
+  const meRes = await fetch(
+    `https://graph.instagram.com/me?fields=id,username,account_type,media_count,followers_count,follows_count,name,profile_picture_url,biography&access_token=${longToken}`,
+  );
+  if (!meRes.ok) throw new Error(`IG /me ${meRes.status}: ${await meRes.text()}`);
+  const me = await meRes.json();
+
+  return {
+    id: String(me.id),
+    username: me.username,
+    display_name: me.name ?? me.username,
+    avatar_url: me.profile_picture_url ?? null,
+    followers_count: Number(me.followers_count ?? 0),
+    media_count: Number(me.media_count ?? 0),
+    biography: me.biography ?? null,
+    long_lived_token: longToken,
+    long_lived_expires_in: expiresIn,
+  };
+}
+
+/**
+ * Legacy Instagram-via-Meta-Graph (kept for reference; not used in the
+ * Instagram-native flow above).
+ */
+async function _fetchInstagramAccount_legacy(accessToken: string) {
+  // Identify the user first — used in error messages if we can't find a Page.
+  const meRes = await fetch(
+    `https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${accessToken}`,
+  );
+  const me = meRes.ok ? await meRes.json() : null;
+
+  // 1) Pages the user admins via legacy endpoint.
+  let pages: any[] = [];
+  const pagesRes = await fetch(
+    `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,access_token,instagram_business_account{id,username,name,profile_picture_url,followers_count,media_count}&access_token=${accessToken}`,
+  );
+  if (pagesRes.ok) {
+    const pj = await pagesRes.json();
+    pages = (pj.data as any[]) ?? [];
+  }
+
+  // Business Login fallback #1: granular_scopes.
+  if (!pages.length) {
+    const scopesRes = await fetch(
+      `https://graph.facebook.com/v19.0/me?fields=granular_scopes&access_token=${accessToken}`,
+    );
+    const scopesJson = scopesRes.ok ? await scopesRes.json() : null;
+    const grants = (scopesJson?.granular_scopes as any[]) ?? [];
+    const grantedPageIds = new Set<string>();
+    for (const g of grants) {
+      if (g.scope === 'pages_show_list' || g.scope === 'instagram_basic') {
+        for (const id of g.target_ids ?? []) grantedPageIds.add(String(id));
+      }
+    }
+    for (const pageId of grantedPageIds) {
+      const pRes = await fetch(
+        `https://graph.facebook.com/v19.0/${pageId}?fields=id,name,access_token,instagram_business_account{id,username,name,profile_picture_url,followers_count,media_count}&access_token=${accessToken}`,
+      );
+      if (pRes.ok) pages.push(await pRes.json());
+    }
+  }
+
+  // Business Login fallback #2: Business Portfolios.
+  if (!pages.length) {
+    const bizRes = await fetch(
+      `https://graph.facebook.com/v19.0/me/businesses?fields=id,name&access_token=${accessToken}`,
+    );
+    if (bizRes.ok) {
+      const bj = await bizRes.json();
+      for (const biz of (bj.data as any[]) ?? []) {
+        for (const path of ['owned_pages', 'client_pages']) {
+          const owRes = await fetch(
+            `https://graph.facebook.com/v19.0/${biz.id}/${path}?fields=id,name,access_token,instagram_business_account{id,username,name,profile_picture_url,followers_count,media_count}&access_token=${accessToken}`,
+          );
+          if (!owRes.ok) continue;
+          const oj = await owRes.json();
+          for (const p of (oj.data as any[]) ?? []) pages.push(p);
+          if (pages.length) break;
+        }
+        if (pages.length) break;
+      }
+    }
+  }
+
+  if (!pages.length) {
+    const who = me?.name ? ` (signed in as ${me.name})` : '';
+    throw new Error(
+      `No Pages accessible${who}. Instagram Business accounts must be linked ` +
+        `to a Facebook Page, so we need access to at least one Page. Revoke this ` +
+        `app at facebook.com/settings → Business Tools, then re-run Connect and ` +
+        `pick a Page when prompted.`,
+    );
+  }
+  // Find the first page that has a linked IG Business/Creator account.
+  const linked = pages.find((p) => p.instagram_business_account);
+  if (!linked) {
+    throw new Error(
+      'No Instagram Business/Creator account linked to any of your Facebook Pages. ' +
+        'Convert your IG to a Professional account and link it to a FB Page.',
+    );
+  }
+  const ig = linked.instagram_business_account;
+  return {
+    id: ig.id,
+    username: ig.username,
+    display_name: ig.name ?? ig.username,
+    avatar_url: ig.profile_picture_url ?? null,
+    followers_count: Number(ig.followers_count ?? 0),
+    media_count: Number(ig.media_count ?? 0),
+    page_id: linked.id,
+    page_name: linked.name,
+    page_access_token: linked.access_token, // long-lived per page
+  };
+}
+
+/**
+ * Facebook via Meta: returns the Page the user wants to claim. For now
+ * we pick the first owned Page; later we can let the user choose.
+ */
+async function fetchFacebookPage(accessToken: string) {
+  // First call /me to confirm what user we authenticated as.
+  const meRes = await fetch(
+    `https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${accessToken}`,
+  );
+  const me = meRes.ok ? await meRes.json() : null;
+
+  // Try /me/accounts first (works for legacy Facebook Login).
+  let pages: any[] = [];
+  const pagesRes = await fetch(
+    `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,access_token,fan_count,picture{data{url}},category,link&access_token=${accessToken}`,
+  );
+  if (pagesRes.ok) {
+    const pj = await pagesRes.json();
+    pages = (pj.data as any[]) ?? [];
+  }
+
+  // Business Login fallback #1: granular_scopes (legacy granular grants).
+  if (!pages.length) {
+    const scopesRes = await fetch(
+      `https://graph.facebook.com/v19.0/me?fields=granular_scopes&access_token=${accessToken}`,
+    );
+    const scopesJson = scopesRes.ok ? await scopesRes.json() : null;
+    const grants = (scopesJson?.granular_scopes as any[]) ?? [];
+    const grantedPageIds = new Set<string>();
+    for (const g of grants) {
+      if (g.scope === 'pages_show_list' || g.scope === 'pages_read_engagement') {
+        for (const id of g.target_ids ?? []) grantedPageIds.add(String(id));
+      }
+    }
+    for (const pageId of grantedPageIds) {
+      const pRes = await fetch(
+        `https://graph.facebook.com/v19.0/${pageId}?fields=id,name,access_token,fan_count,picture{data{url}},category,link&access_token=${accessToken}`,
+      );
+      if (pRes.ok) {
+        pages.push(await pRes.json());
+        break;
+      }
+    }
+  }
+
+  // Business Login fallback #2: walk the user's Business Portfolios.
+  // When an app is configured as Business Login, the Page grant is stored
+  // at the Business Portfolio level, not on the user — so we hit
+  // /me/businesses → /{biz_id}/owned_pages and /{biz_id}/client_pages.
+  let businessesDebug: any[] = [];
+  if (!pages.length) {
+    const bizRes = await fetch(
+      `https://graph.facebook.com/v19.0/me/businesses?fields=id,name&access_token=${accessToken}`,
+    );
+    if (bizRes.ok) {
+      const bj = await bizRes.json();
+      businessesDebug = (bj.data as any[]) ?? [];
+      for (const biz of businessesDebug) {
+        for (const path of ['owned_pages', 'client_pages']) {
+          const owRes = await fetch(
+            `https://graph.facebook.com/v19.0/${biz.id}/${path}?fields=id,name,access_token,fan_count,picture{data{url}},category,link&access_token=${accessToken}`,
+          );
+          if (!owRes.ok) continue;
+          const oj = await owRes.json();
+          for (const p of (oj.data as any[]) ?? []) pages.push(p);
+          if (pages.length) break;
+        }
+        if (pages.length) break;
+      }
+    }
+  }
+
+  if (!pages.length) {
+    const who = me?.name ? ` (signed in as ${me.name})` : '';
+    const bizInfo = businessesDebug.length
+      ? ` Business Portfolios visible: ${businessesDebug.map((b) => b.name).join(', ')}.`
+      : ' No Business Portfolios visible (likely missing business_management scope).';
+    throw new Error(
+      `No Facebook Pages accessible${who}.${bizInfo} Make sure the Page is ` +
+        `inside one of those portfolios, and that you enabled ` +
+        `business_management as Standard Access in your Meta app.`,
+    );
+  }
+  const page = pages[0];
+  return {
+    id: page.id,
+    name: page.name,
+    handle: page.name?.toLowerCase().replace(/\s+/g, ''),
+    avatar_url: page.picture?.data?.url ?? null,
+    followers_count: Number(page.fan_count ?? 0),
+    category: page.category ?? null,
+    link: page.link ?? `https://www.facebook.com/${page.id}`,
+    page_access_token: page.access_token,
+  };
 }
 
 async function fetchTwitchChannel(accessToken: string, clientId: string) {
@@ -236,6 +498,10 @@ export async function oauthCallbackHandler(req: Request): Promise<Response> {
         ? await fetchYoutubeChannel(token.access_token)
         : platformSlug === 'twitch'
         ? await fetchTwitchChannel(token.access_token, clientId)
+        : platformSlug === 'instagram'
+        ? await fetchInstagramAccountNative(token.access_token, clientSecret)
+        : platformSlug === 'facebook'
+        ? await fetchFacebookPage(token.access_token)
         : await fetchKickChannel(token.access_token);
     if (!channel) throw new Error('Could not load channel info from provider');
 
@@ -293,6 +559,114 @@ export async function oauthCallbackHandler(req: Request): Promise<Response> {
         const { data: inserted, error } = await sb
           .from('external_channels')
           .insert({ ...fields, discovery_source: 'manual' }) // claimed = manual
+          .select('id')
+          .single();
+        if (error) throw error;
+        channelRowId = (inserted as any).id;
+      }
+    } else if (platformSlug === 'instagram') {
+      // Instagram-native flow — `channel` shape comes from
+      // fetchInstagramAccountNative. There's no FB Page in this path;
+      // the long_lived_token replaces what we used to call page_access_token.
+      channelMeta = {
+        channel_id: channel.id,
+        handle: channel.username,
+        display_name: channel.display_name,
+        avatar_url: channel.avatar_url,
+        long_lived_token: channel.long_lived_token, // used for all subsequent media reads
+      };
+
+      const fields = {
+        platform_id: platformId,
+        platform_external_id: channel.id,
+        handle: channel.username,
+        display_name: channel.display_name,
+        avatar_url: channel.avatar_url,
+        banner_url: null,
+        description: channel.biography ?? null,
+        channel_url: `https://www.instagram.com/${channel.username}`,
+        country: null,
+        subscriber_count: channel.followers_count ?? 0,
+        total_view_count: '0',
+        video_count: channel.media_count ?? 0,
+        user_id: userId,
+        claimed_at: new Date().toISOString(),
+        last_synced_at: new Date().toISOString(),
+        extra_data: { flow: 'instagram_native' },
+      };
+
+      const { data: existing } = await sb
+        .from('external_channels')
+        .select('id')
+        .eq('platform_id', platformId)
+        .eq('platform_external_id', channel.id)
+        .maybeSingle();
+      if (existing) {
+        const { error } = await sb
+          .from('external_channels')
+          .update(fields)
+          .eq('id', (existing as any).id);
+        if (error) throw error;
+        channelRowId = (existing as any).id;
+      } else {
+        const { data: inserted, error } = await sb
+          .from('external_channels')
+          .insert({ ...fields, discovery_source: 'manual' })
+          .select('id')
+          .single();
+        if (error) throw error;
+        channelRowId = (inserted as any).id;
+      }
+
+      // For Instagram, replace the short-lived token with the long-lived one
+      // so when we persist below, the stored access_token is the 60-day one.
+      token.access_token = channel.long_lived_token;
+      token.expires_in = channel.long_lived_expires_in;
+    } else if (platformSlug === 'facebook') {
+      channelMeta = {
+        channel_id: channel.id,
+        handle: channel.handle ?? channel.name,
+        display_name: channel.name,
+        avatar_url: channel.avatar_url,
+        page_access_token: channel.page_access_token,
+      };
+
+      const fields = {
+        platform_id: platformId,
+        platform_external_id: channel.id,
+        handle: channel.handle ?? null,
+        display_name: channel.name,
+        avatar_url: channel.avatar_url,
+        banner_url: null,
+        description: null,
+        channel_url: channel.link,
+        country: null,
+        subscriber_count: channel.followers_count ?? 0,
+        total_view_count: '0',
+        video_count: 0,
+        user_id: userId,
+        claimed_at: new Date().toISOString(),
+        last_synced_at: new Date().toISOString(),
+        extra_data: { category: channel.category },
+      };
+
+      const { data: existing } = await sb
+        .from('external_channels')
+        .select('id')
+        .eq('platform_id', platformId)
+        .eq('platform_external_id', channel.id)
+        .maybeSingle();
+      if (existing) {
+        const { error } = await sb
+          .from('external_channels')
+          .update(fields)
+          .eq('id', (existing as any).id);
+        if (error) throw error;
+        channelRowId = (existing as any).id;
+      } else {
+        const { data: inserted, error } = await sb
+          .from('external_channels')
+          .insert({ ...fields, discovery_source: 'manual' })
           .select('id')
           .single();
         if (error) throw error;
@@ -441,7 +815,13 @@ export async function oauthCallbackHandler(req: Request): Promise<Response> {
     const display = (channelMeta.handle ?? channelMeta.display_name ?? '').toString();
     const labeled = display.startsWith('@') ? display : `@${display}`;
     return html(
-      `<p>Connected ${platformSlug === 'youtube' ? 'YouTube' : platformSlug === 'twitch' ? 'Twitch' : 'Kick'} as <b>${labeled}</b>.</p>
+      `<p>Connected ${
+        platformSlug === 'youtube' ? 'YouTube' :
+        platformSlug === 'twitch'  ? 'Twitch'  :
+        platformSlug === 'instagram' ? 'Instagram' :
+        platformSlug === 'facebook'  ? 'Facebook'  :
+        'Kick'
+      } as <b>${labeled}</b>.</p>
        <p>We're syncing your back-catalog now — give it a minute and refresh your profile.</p>`,
       { ok: true },
     );

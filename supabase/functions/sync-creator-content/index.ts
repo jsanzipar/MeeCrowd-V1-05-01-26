@@ -21,6 +21,7 @@ import { createClient, SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 const YT = 'https://www.googleapis.com/youtube/v3';
 const KICK_API = 'https://api.kick.com/public/v1';
 const TWITCH_API = 'https://api.twitch.tv/helix';
+const META_API = 'https://graph.facebook.com/v19.0';
 
 const VIDEOS_PER_BATCH = 50;
 const COMMENTS_PER_VIDEO = 20;
@@ -588,6 +589,245 @@ async function upsertTwitchVideo(sb: SupabaseClient, row: OAuthRow, v: any): Pro
   }
 }
 
+/**
+ * Instagram back-catalog: media (posts/reels/photos) for the connected
+ * IG Business/Creator account. The Instagram-native OAuth flow gives us
+ * a long-lived token (~60 days) stored on user_oauth_tokens.access_token,
+ * and the IG user_id is in account_meta.channel_id.
+ *
+ * Endpoint host is graph.instagram.com (different from Meta's graph.facebook.com).
+ */
+const IG_GRAPH = 'https://graph.instagram.com';
+
+async function syncInstagram(
+  sb: SupabaseClient,
+  row: OAuthRow,
+): Promise<{ videos: number; comments: number }> {
+  const igUserId = row.account_meta?.channel_id;
+  // Prefer the long-lived token stored as access_token (Instagram-native flow);
+  // fall back to legacy account_meta.page_access_token for old rows that
+  // came in via the Meta-graph flow.
+  const token = row.access_token ?? row.account_meta?.page_access_token;
+  if (!igUserId || !token) {
+    console.warn('Instagram: missing channel_id or access_token');
+    return { videos: 0, comments: 0 };
+  }
+
+  let cursor: string | undefined;
+  let synced = 0;
+  for (let safety = 0; safety < 10; safety++) {
+    const url = new URL(`${IG_GRAPH}/${igUserId}/media`);
+    url.searchParams.set(
+      'fields',
+      'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count,username',
+    );
+    url.searchParams.set('limit', '50');
+    url.searchParams.set('access_token', token);
+    if (cursor) url.searchParams.set('after', cursor);
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(`IG /media ${res.status}: ${t.slice(0, 200)}`);
+    }
+    const j = await res.json();
+    const items = (j.data as any[]) ?? [];
+    if (!items.length) break;
+
+    for (const m of items) {
+      await upsertInstagramMedia(sb, row, m);
+      synced++;
+    }
+    cursor = j.paging?.cursors?.after;
+    if (!j.paging?.next) break;
+    if (synced >= MAX_VIDEOS_PER_RUN) break;
+  }
+  return { videos: synced, comments: 0 };
+}
+
+async function upsertInstagramMedia(sb: SupabaseClient, row: OAuthRow, m: any) {
+  const externalId = String(m.id);
+  // Map IG media_type → our `kind` taxonomy.
+  const kind =
+    m.media_type === 'VIDEO'
+      ? 'video'
+      : m.media_type === 'REELS'
+      ? 'short'
+      : m.media_type === 'CAROUSEL_ALBUM'
+      ? 'photo'
+      : m.media_type === 'IMAGE'
+      ? 'photo'
+      : 'post';
+
+  const fields = {
+    channel_id: row.channel_id!,
+    platform_id: row.platform_id,
+    external_id: externalId,
+    kind,
+    title: m.caption ? String(m.caption).split('\n')[0].slice(0, 200) : null,
+    description: m.caption ?? null,
+    url: m.permalink ?? null,
+    embed_url: m.permalink ? `${m.permalink.replace(/\/$/, '')}/embed` : null,
+    thumbnail_url: m.thumbnail_url ?? m.media_url ?? null,
+    duration_seconds: null,
+    is_live: false,
+    language: null,
+    category: null,
+    published_at: m.timestamp ?? null,
+    scheduled_start_at: null,
+    visibility: 'public' as const,
+    extra_data: {
+      media_type: m.media_type,
+      username: m.username,
+      media_url: m.media_url,
+    },
+    last_synced_at: new Date().toISOString(),
+  };
+
+  const { data: existing } = await sb
+    .from('external_content')
+    .select('id')
+    .eq('platform_id', row.platform_id)
+    .eq('external_id', externalId)
+    .maybeSingle();
+
+  let contentId: string;
+  if (existing) {
+    const { error } = await sb
+      .from('external_content')
+      .update(fields)
+      .eq('id', (existing as any).id);
+    if (error) throw error;
+    contentId = (existing as any).id;
+  } else {
+    const { data: inserted, error } = await sb
+      .from('external_content')
+      .insert({ ...fields, discovery_source: 'manual' })
+      .select('id')
+      .single();
+    if (error) throw error;
+    contentId = (inserted as any).id;
+  }
+
+  await sb.from('external_content_metrics').insert({
+    content_id: contentId,
+    view_count: null,
+    like_count: m.like_count != null ? Number(m.like_count) : null,
+    comment_count: m.comments_count != null ? Number(m.comments_count) : null,
+    current_viewer_count: null,
+    extra_data: { source: 'sync_creator_content' },
+  });
+}
+
+/**
+ * Facebook back-catalog: posts from a Page the user admins.
+ */
+async function syncFacebook(
+  sb: SupabaseClient,
+  row: OAuthRow,
+): Promise<{ videos: number; comments: number }> {
+  const pageId = row.account_meta?.channel_id;
+  const pageToken = row.account_meta?.page_access_token ?? row.access_token;
+  if (!pageId || !pageToken) {
+    console.warn('Facebook: missing page_id/page_access_token');
+    return { videos: 0, comments: 0 };
+  }
+
+  let cursor: string | undefined;
+  let synced = 0;
+  for (let safety = 0; safety < 10; safety++) {
+    const url = new URL(`${META_API}/${pageId}/posts`);
+    url.searchParams.set(
+      'fields',
+      'id,message,full_picture,permalink_url,created_time,attachments{type,url,media{image{src}}},reactions.summary(total_count),comments.summary(total_count)',
+    );
+    url.searchParams.set('limit', '50');
+    url.searchParams.set('access_token', pageToken);
+    if (cursor) url.searchParams.set('after', cursor);
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(`FB /posts ${res.status}: ${t.slice(0, 200)}`);
+    }
+    const j = await res.json();
+    const items = (j.data as any[]) ?? [];
+    if (!items.length) break;
+
+    for (const p of items) {
+      await upsertFacebookPost(sb, row, p);
+      synced++;
+    }
+    cursor = j.paging?.cursors?.after;
+    if (!j.paging?.next) break;
+    if (synced >= MAX_VIDEOS_PER_RUN) break;
+  }
+  return { videos: synced, comments: 0 };
+}
+
+async function upsertFacebookPost(sb: SupabaseClient, row: OAuthRow, p: any) {
+  const externalId = String(p.id);
+  const attachment = p.attachments?.data?.[0];
+  const kind = attachment?.type === 'video_inline' || attachment?.type === 'video' ? 'video' : 'post';
+
+  const fields = {
+    channel_id: row.channel_id!,
+    platform_id: row.platform_id,
+    external_id: externalId,
+    kind,
+    title: p.message ? String(p.message).split('\n')[0].slice(0, 200) : null,
+    description: p.message ?? null,
+    url: p.permalink_url ?? null,
+    embed_url: null, // FB embeds via JS SDK; render text/image card directly
+    thumbnail_url: p.full_picture ?? attachment?.media?.image?.src ?? null,
+    duration_seconds: null,
+    is_live: false,
+    language: null,
+    category: null,
+    published_at: p.created_time ?? null,
+    scheduled_start_at: null,
+    visibility: 'public' as const,
+    extra_data: {
+      attachment_type: attachment?.type ?? null,
+      attachment_url: attachment?.url ?? null,
+    },
+    last_synced_at: new Date().toISOString(),
+  };
+
+  const { data: existing } = await sb
+    .from('external_content')
+    .select('id')
+    .eq('platform_id', row.platform_id)
+    .eq('external_id', externalId)
+    .maybeSingle();
+
+  let contentId: string;
+  if (existing) {
+    const { error } = await sb.from('external_content').update(fields).eq('id', (existing as any).id);
+    if (error) throw error;
+    contentId = (existing as any).id;
+  } else {
+    const { data: inserted, error } = await sb
+      .from('external_content')
+      .insert({ ...fields, discovery_source: 'manual' })
+      .select('id')
+      .single();
+    if (error) throw error;
+    contentId = (inserted as any).id;
+  }
+
+  const reactions = p.reactions?.summary?.total_count;
+  const comments = p.comments?.summary?.total_count;
+  await sb.from('external_content_metrics').insert({
+    content_id: contentId,
+    view_count: null,
+    like_count: reactions != null ? Number(reactions) : null,
+    comment_count: comments != null ? Number(comments) : null,
+    current_viewer_count: null,
+    extra_data: { source: 'sync_creator_content' },
+  });
+}
+
 Deno.serve(async (req: Request) => {
   const startedAt = Date.now();
   try {
@@ -650,6 +890,12 @@ Deno.serve(async (req: Request) => {
           videosSynced += videos;
         } else if (slug === 'twitch') {
           const { videos } = await syncTwitch(sb, row);
+          videosSynced += videos;
+        } else if (slug === 'instagram') {
+          const { videos } = await syncInstagram(sb, row);
+          videosSynced += videos;
+        } else if (slug === 'facebook') {
+          const { videos } = await syncFacebook(sb, row);
           videosSynced += videos;
         }
       } catch (e: any) {

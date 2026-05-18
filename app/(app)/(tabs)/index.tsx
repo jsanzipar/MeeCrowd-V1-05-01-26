@@ -17,16 +17,17 @@ import { router } from 'expo-router';
 import { FeedTabs } from '@/components/feed/FeedTabs';
 import { PostCard } from '@/components/feed/PostCard';
 import { LivePostCard } from '@/components/feed/LivePostCard';
+import { LatestRowCard } from '@/components/feed/LatestRowCard';
 import { SortFilters, ActiveFilterChips, CountryPicker } from '@/components/feed/SortFilters';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { PostListSkeleton } from '@/components/ui/Skeleton';
-import { useFeed, useSearchPosts } from '@/hooks/useFeed';
+import { useFeed, useSearchPosts, useLatestFeed } from '@/hooks/useFeed';
 import { useLiveNow } from '@/hooks/useAggregation';
 import { useFeedStore } from '@/stores/feedStore';
 import { usePostActions } from '@/hooks/usePostActions';
 import { colors, spacing, radius, typography } from '@/theme';
-import type { Post, ExternalLiveNowRow, SortFilter } from '@/types';
+import type { Post, ExternalLiveNowRow, LatestFeedRow, SortFilter } from '@/types';
 
 // Filters that name a platform. Live data is filtered to streams matching
 // any selected external platform; if only `meecrowd` is selected (no
@@ -49,7 +50,8 @@ const LIVE_SUPPRESSING_FILTERS: SortFilter[] = [
 // and ingested live streams without coercing one into the other.
 type FeedItem =
   | { kind: 'post'; data: Post }
-  | { kind: 'live'; data: ExternalLiveNowRow };
+  | { kind: 'live'; data: ExternalLiveNowRow }
+  | { kind: 'latest'; data: LatestFeedRow };
 
 const LOGO = require('@/assets/images/logo-w.png');
 
@@ -65,7 +67,15 @@ export default function FeedScreen() {
   const [isSearching, setIsSearching] = useState(false);
   const searchRef = useRef<TextInput>(null);
 
-  const feed = useFeed(activeTab, activeFilters);
+  // The Upcoming + Trending tabs share a posts-table query (useFeed). The
+  // new Latest tab pulls from the latest_feed view (mixed native + external).
+  // Switching by activeTab keeps each query enabled only when visible so we
+  // don't pay for the off-screen one.
+  const feed = useFeed(
+    activeTab === 'latest' ? 'trending' : activeTab,
+    activeFilters,
+  );
+  const latestFeed = useLatestFeed(activeFilters);
   const search = useSearchPosts(searchQuery);
   // Only fetch live streams while on Trending and not searching — keeps
   // the Upcoming tab and the search results focused.
@@ -121,39 +131,55 @@ export default function FeedScreen() {
   }, [liveQuery.data, activeFilters, isSearching, activeTab]);
   const { toggleLike, toggleBookmark } = usePostActions();
 
-  // Build the unified feed list. Live streams pin to the top of Trending,
-  // ordered by viewer count (already sorted by useLiveNow).
+  // Build the unified feed list. Source depends on the active tab:
+  //   - search    → only post results (search uses posts table only for now)
+  //   - trending  → live streams pinned to top + native trending posts
+  //   - upcoming  → native posts (scheduled / recurring)
+  //   - latest    → mixed native + external content from latest_feed view
   const items = React.useMemo<FeedItem[]>(() => {
     if (isSearching && searchQuery.length >= 2) {
       return (search.data ?? []).map((p) => ({ kind: 'post', data: p }));
+    }
+    if (activeTab === 'latest') {
+      const rows = latestFeed.data?.pages.flat() ?? [];
+      return rows.map((r) => ({ kind: 'latest', data: r }));
     }
     const posts = feed.data?.pages.flat() ?? [];
     const liveItems: FeedItem[] = liveData.map((row) => ({ kind: 'live', data: row }));
     const postItems: FeedItem[] = posts.map((p) => ({ kind: 'post', data: p }));
     return [...liveItems, ...postItems];
-  }, [isSearching, searchQuery, search.data, feed.data, liveData]);
+  }, [isSearching, searchQuery, search.data, feed.data, latestFeed.data, liveData, activeTab]);
 
-  const isLoading = isSearching ? search.isLoading : feed.isLoading;
-  const isError = isSearching ? search.isError : feed.isError;
+  // Active query depends on the tab. Centralize the lookup so loading,
+  // error, refetch, and pagination state all flow from the same source.
+  const activeQuery = isSearching
+    ? search
+    : activeTab === 'latest'
+    ? latestFeed
+    : feed;
+  const isLoading = (activeQuery as any).isLoading ?? false;
+  const isError = (activeQuery as any).isError ?? false;
 
-  const renderItem = useCallback(({ item }: { item: FeedItem }) => {
-    if (item.kind === 'live') {
-      return <LivePostCard row={item.data} />;
-    }
-    return (
-      <PostCard
-        post={item.data}
-        onLike={() => toggleLike(item.data)}
-        onBookmark={() => toggleBookmark(item.data)}
-      />
-    );
-  }, [toggleLike, toggleBookmark]);
-
-  const keyExtractor = useCallback(
-    (item: FeedItem) =>
-      item.kind === 'live' ? `live-${item.data.content_id}` : item.data.id,
-    []
+  const renderItem = useCallback(
+    ({ item }: { item: FeedItem }) => {
+      if (item.kind === 'live') return <LivePostCard row={item.data} />;
+      if (item.kind === 'latest') return <LatestRowCard row={item.data} />;
+      return (
+        <PostCard
+          post={item.data}
+          onLike={() => toggleLike(item.data)}
+          onBookmark={() => toggleBookmark(item.data)}
+        />
+      );
+    },
+    [toggleLike, toggleBookmark],
   );
+
+  const keyExtractor = useCallback((item: FeedItem) => {
+    if (item.kind === 'live') return `live-${item.data.content_id}`;
+    if (item.kind === 'latest') return `latest-${item.data.source}-${item.data.id}`;
+    return item.data.id;
+  }, []);
 
   const closePanels = () => {
     setShowSortPanel(false);
@@ -273,20 +299,21 @@ export default function FeedScreen() {
         refreshControl={
           !isSearching ? (
             <RefreshControl
-              refreshing={feed.isRefetching}
-              onRefresh={feed.refetch}
+              refreshing={(activeQuery as any).isRefetching ?? false}
+              onRefresh={() => (activeQuery as any).refetch?.()}
               tintColor={colors.primary}
             />
           ) : undefined
         }
         onEndReached={() => {
-          if (!isSearching && feed.hasNextPage && !feed.isFetchingNextPage) {
-            feed.fetchNextPage();
+          const q = activeQuery as any;
+          if (!isSearching && q.hasNextPage && !q.isFetchingNextPage) {
+            q.fetchNextPage?.();
           }
         }}
         onEndReachedThreshold={0.5}
         ListFooterComponent={
-          feed.isFetchingNextPage ? (
+          (activeQuery as any).isFetchingNextPage ? (
             <ActivityIndicator color={colors.primary} style={styles.footer} />
           ) : null
         }
@@ -294,9 +321,7 @@ export default function FeedScreen() {
           isLoading ? (
             <PostListSkeleton count={6} />
           ) : isError ? (
-            <ErrorState
-              onRetry={() => (isSearching ? search.refetch() : feed.refetch())}
-            />
+            <ErrorState onRetry={() => (activeQuery as any).refetch?.()} />
           ) : isSearching && searchQuery.length >= 2 ? (
             <EmptyState
               icon="search-outline"

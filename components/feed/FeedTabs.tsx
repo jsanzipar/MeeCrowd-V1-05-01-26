@@ -6,6 +6,7 @@ import type { FeedTab } from '@/types';
 const tabs: { key: FeedTab; label: string }[] = [
   { key: 'upcoming', label: 'Upcoming' },
   { key: 'trending', label: 'Trending' },
+  { key: 'latest', label: 'Latest' },
 ];
 
 interface FeedTabsProps {
